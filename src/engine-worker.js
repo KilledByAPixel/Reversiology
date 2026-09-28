@@ -4,12 +4,17 @@
 // The page sends the evaluation weights (fetched once for all workers) first.
 import { Engine, positionFromColors } from './engine/engine.js';
 import { unpackWeights, gunzip } from './engine/weights.js';
+import { useWasm } from './engine/wasm.js';
 
 let engine = null, job = null, loadError = null;
 let resolveReady;
 const ready = new Promise(r => { resolveReady = r; });
 
-async function setWeights(bytes, error) {
+async function setWeights(bytes, wasm, error) {
+  // The WebAssembly search core, when it loads; the JavaScript search otherwise.
+  if (wasm && typeof WebAssembly === 'object') {
+    try { useWasm(await WebAssembly.compile(wasm)); } catch (e) { console.warn('search core:', e.message || e); }
+  }
   try {
     if (error) throw new Error(error);
     engine = new Engine(unpackWeights(await gunzip(new Uint8Array(bytes))), { ttBits: 18 });
@@ -27,7 +32,7 @@ const yieldThen = () => { if (!stepQueued) { stepQueued = true; channel.port2.po
 
 self.onmessage = async e => {
   const msg = e.data;
-  if (msg.type === 'weights') { setWeights(msg.bytes, msg.error); return; }
+  if (msg.type === 'weights') { setWeights(msg.bytes, msg.wasm, msg.error); return; }
   if (msg.type === 'stop') { job = null; return; }
   if (msg.type === 'search') {
     job = { id: msg.id, msg, gen: null, lastReport: 0, started: performance.now() };

@@ -1,20 +1,23 @@
 // Main-thread handle to an engine worker. search() returns a promise for the
 // final results and streams progress; starting a new search cancels the old one.
 
-// The evaluation weights, downloaded once and handed to every worker.
-let weights = null;
+// The evaluation weights and the WebAssembly search core, downloaded once and
+// handed to every worker. Without the core, the workers search in JavaScript.
+let weights = null, core = null;
 const loadWeights = () => weights ||= fetch(new URL('../weights/eval.bin.gz', import.meta.url))
   .then(res => { if (!res.ok) throw new Error(`couldn't load the evaluation (${res.status})`); return res.arrayBuffer(); })
   .then(bytes => ({ bytes }), e => ({ error: e.message || String(e) }));
+const loadCore = () => core ||= fetch(new URL('./engine/core.wasm', import.meta.url))
+  .then(res => res.ok ? res.arrayBuffer() : null, () => null);
 
 export class Engine {
   constructor(name) {
     this.name = name;
     this.worker = new Worker(new URL('./engine-worker.js', import.meta.url), { type: 'module' });
-    loadWeights().then(w => {
+    Promise.all([loadWeights(), loadCore()]).then(([w, c]) => {
       // Each worker gets its own copy (transferred, so it isn't copied twice).
-      const bytes = w.bytes && w.bytes.slice(0);
-      this.worker.postMessage({ type: 'weights', bytes, error: w.error }, bytes ? [bytes] : []);
+      const bytes = w.bytes && w.bytes.slice(0), wasm = c && c.slice(0);
+      this.worker.postMessage({ type: 'weights', bytes, wasm, error: w.error }, [bytes, wasm].filter(Boolean));
     });
     this.nextId = 1;
     this.pending = null;

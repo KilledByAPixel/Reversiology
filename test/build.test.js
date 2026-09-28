@@ -22,6 +22,7 @@ test('build: the page and its code are stamped with their contents', () => {
   const app = text('app.js');
   assert.ok(app.includes(`engine-worker.js?v=${stamp('engine-worker.js')}`), 'engine worker');
   assert.ok(app.includes(`weights/eval.bin.gz?v=${stamp('weights/eval.bin.gz')}`), 'evaluation weights');
+  assert.ok(app.includes(`engine/core.wasm?v=${stamp('engine/core.wasm')}`), 'search core');
 });
 
 test('build: the page knows its version and checks for a newer one', () => {
@@ -34,6 +35,6 @@ test('build: the page knows its version and checks for a newer one', () => {
 });
 
 test('build: everything the page needs is there, and no zip when asked not to', () => {
-  for (const f of ['social.png', 'LICENSE', 'weights/eval.bin.gz']) assert.ok(existsSync(join(out, f)), f);
+  for (const f of ['social.png', 'LICENSE', 'weights/eval.bin.gz', 'engine/core.wasm']) assert.ok(existsSync(join(out, f)), f);
   assert.ok(!existsSync(join(out, 'reversiology.zip')));
 });

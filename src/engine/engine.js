@@ -3,6 +3,7 @@
 // that yields after each unit of work, so the worker can report progress and
 // stop between units; `run` drives it to the end synchronously (node, tests).
 import { Search, finalScore, BLACK, WHITE } from './search.js';
+import { WasmSearch, wasmAvailable } from './wasm.js';
 import { R, mobility, flips, popcount, lowBit } from './bits.js';
 
 // A position for the engine: black and white bitboards as 32-bit halves, and
@@ -29,8 +30,9 @@ const listBits = (lo, hi) => {
 };
 
 export class Engine {
+  // opts.js: use the JavaScript search even when the WebAssembly one is loaded.
   constructor(weights = null, opts = {}) {
-    this.search = new Search(weights, opts);
+    this.search = weights && wasmAvailable() && !opts.js ? new WasmSearch(weights, opts) : new Search(weights, opts);
   }
 
   // opts:

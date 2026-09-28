@@ -3,9 +3,9 @@
 //
 // No dependencies. The ES modules in src/ are inlined into classic scripts
 // (app.js for the page, engine-worker.js for the search workers), so the
-// result does not rely on module workers. The evaluation weights are copied
-// alongside, and every file is addressed with a stamp of its contents (see
-// "build" below). dist/reversiology.zip is the same thing for hosts that take
+// result does not rely on module workers. The evaluation weights and the
+// search core (engine/core.wasm) are copied alongside, and every file is
+// addressed with a stamp of its contents (see "build" below). dist/reversiology.zip is the same thing for hosts that take
 // an upload, such as itch.io.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -159,12 +159,14 @@ fs.mkdirSync(dist, { recursive: true });
 const files = new Map(); // dist name -> Buffer
 const v = name => `${name}?v=${stamp(files.get(name))}`;
 files.set('weights/eval.bin.gz', fs.readFileSync(path.join(root, 'weights', 'eval.bin.gz')));
+files.set('engine/core.wasm', fs.readFileSync(path.join(src, 'engine', 'core.wasm')));
 files.set('engine-worker.js', Buffer.from(bundle(path.join(src, 'engine-worker.js'))));
 // The worker is created by URL; in the bundle it is a plain sibling script.
 files.set('app.js', Buffer.from(bundle(path.join(src, 'app.js'), {
   'engine-client.js': {
     "new Worker(new URL('./engine-worker.js', import.meta.url), { type: 'module' })": `new Worker('${v('engine-worker.js')}')`,
     "new URL('../weights/eval.bin.gz', import.meta.url)": `new URL('${v('weights/eval.bin.gz')}', document.baseURI)`,
+    "new URL('./engine/core.wasm', import.meta.url)": `new URL('${v('engine/core.wasm')}', document.baseURI)`,
   },
 })));
 files.set('style.css', fs.readFileSync(path.join(root, 'style.css')));
