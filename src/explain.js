@@ -97,9 +97,13 @@ export function compareFacts(before, move, best, mover) {
   const gaveMine = cornersAfter(mine).length, gaveBest = cornersAfter(theirs).length;
   if (gaveMine > gaveBest) out.push({ type: 'vsBest', why: 'keepsCorner', best, corners: cornersAfter(mine) });
   if (!bo.length && !theirs.b.isOver && mo.length) out.push({ type: 'vsBest', why: 'pass', best });
-  else if (mo.length >= bo.length + 3 && before.empties > 12) out.push({ type: 'vsBest', why: 'mobility', best, mine: mo.length, theirs: bo.length });
+  else if (mo.length >= bo.length + 2 && mo.length >= bo.length * 1.3 && before.empties > 12) out.push({ type: 'vsBest', why: 'mobility', best, mine: mo.length, theirs: bo.length });
   const fr = r => frontierDiscs(r.b, mover).size;
-  if (fr(mine) >= fr(theirs) + 3 && before.empties > 16) out.push({ type: 'vsBest', why: 'frontier', best, mine: fr(mine), theirs: fr(theirs) });
+  if (fr(mine) >= fr(theirs) + 2 && before.empties > 16) out.push({ type: 'vsBest', why: 'frontier', best, mine: fr(mine), theirs: fr(theirs) });
+  // The mover's own options on the next turn (if the opponent passed): a
+  // move that leaves you short of moves is as bad as one that helps them.
+  const myMoves = r => r.b.legalMoves(mover).length;
+  if (myMoves(theirs) >= myMoves(mine) + 3 && before.empties > 16) out.push({ type: 'vsBest', why: 'ownMobility', best, mine: myMoves(mine), theirs: myMoves(theirs) });
   const st = r => countOf(stableDiscs(r.b), r.b, mover);
   if (st(theirs) >= st(mine) + 3) out.push({ type: 'vsBest', why: 'stable', best, gain: st(theirs) - st(mine) });
   if (before.empties <= 18) {

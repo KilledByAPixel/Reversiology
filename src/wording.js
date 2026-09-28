@@ -157,6 +157,7 @@ export function describe(facts, ctx) {
         else if (f.why === 'mobility') out.push(B ? `After ${b}, ${w.subj(opp)} would have had fewer moves to choose from (${f.theirs} instead of ${f.mine}). Fewer choices often forces bad moves later.`
           : S ? `${b}: ${colorName(opp)} mobility ${f.theirs} vs ${f.mine}.` : `${b} leaves ${w.subj(opp)} ${f.theirs} moves instead of ${f.mine}: keeping ${w.poss(opp)} choices low is the key idea in the midgame.`);
         else if (f.why === 'frontier') { if (!B) out.push(S ? `${b}: frontier ${f.theirs} vs ${f.mine}.` : `${b} keeps ${w.poss(mover)} discs more tucked in: ${f.theirs} frontier discs instead of ${f.mine}.`); }
+        else if (f.why === 'ownMobility') { if (!B) out.push(S ? `${b}: own mobility ${f.theirs} vs ${f.mine}.` : `${b} keeps more options for ${w.subj(mover)}: ${f.theirs} possible moves next time instead of ${f.mine}.`); }
         else if (f.why === 'stable') out.push(B ? `${b} would have made ${f.gain} more discs safe for good.` : `${b} gains ${f.gain} more stable discs.`);
         else if (f.why === 'parity') { if (!B) out.push(S ? `${b}: odd region (${f.size}).` : `${b} plays into an odd region (${f.size} empties), keeping the last move there for ${w.subj(mover)}.`); }
         else if (f.why === 'cornerLine') out.push(B ? `With ${b}, ${w.subj(mover)} could have won the ${cornerName(f.corner)} corner a few moves later.` : `${b} leads to ${w.subj(mover)} taking the ${cornerName(f.corner)} corner.`);

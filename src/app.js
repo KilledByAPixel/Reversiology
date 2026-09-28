@@ -557,7 +557,8 @@ function scoreLine(an) {
     return m === 0 ? 'Perfect play from here: <b>a draw</b>.' : `Perfect play from here: <b>${m > 0 ? 'Black' : 'White'} wins by ${Math.abs(m)}</b>.`;
   }
   if (lv === 'beginner') return '&nbsp;';
-  return `Expected result: <b>${describeScore(an.blackScore)}</b> <span class="muted">discs</span>`;
+  const lead = Math.abs(Math.round(an.blackScore));
+  return `Expected result: <b>${describeScore(an.blackScore)}</b>${lead ? ` <span class="muted">${lead === 1 ? 'disc' : 'discs'}</span>` : ''}`;
 }
 
 function renderCoach() {
@@ -635,7 +636,8 @@ function renderReview() {
     if (!s.n) return '';
     const pills = ['blunder', 'mistake', 'inaccuracy'].filter(k => s.counts[k])
       .map(k => `<span class="pill" style="--pill:${GRADES[k].color}">${plural(s.counts[k], gradeLabel(k, level).toLowerCase())}</span>`).join(' ');
-    const avg = level === 'beginner' ? '' : `<span class="muted">avg −${(s.loss / s.n).toFixed(1)} discs/move</span>`;
+    const loss = s.loss / s.n;
+    const avg = level === 'beginner' ? '' : `<span class="muted">${loss < 0.05 ? 'no discs lost' : `loses ${loss.toFixed(1)} discs/move`}</span>`;
     return `<div class="rv-row"><span class="disc-icon ${c === BLACK ? 'black' : 'white'}"></span><b>${who(c)}</b>` +
       `${avg}${pills || '<span class="muted">no mistakes yet</span>'}</div>`;
   };
