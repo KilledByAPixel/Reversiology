@@ -35,12 +35,11 @@ The rules and a short guide to strategy are in the game itself.
 
 Pebble plays almost at random. Each level beats the one below it about 7 to 9
 games out of 10. Phoenix, the strongest, reads 22 moves ahead and plays the
-last 22 perfectly, in about a second a move. Against
-[Edax](https://github.com/abulmo/edax-reversi), one of the strongest Reversi
-programs, it held its own at Edax's strong settings: 14 wins, 5 losses and a
-draw at level 12, and about even at levels 16, 18 and 21 (level 21 reads 21
-moves ahead and plays the last 24 perfectly). That is far beyond any human
-player.
+last 22 perfectly, in about a second a move. It plays at the level of the best
+Reversi programs: against [Edax](https://github.com/abulmo/edax-reversi), one
+of the strongest, it scored 6 wins, 5 losses and a draw at level 21 (reading 21
+moves ahead and playing the last 24 perfectly), about even at levels 16 and 18,
+and 14 wins, 5 losses and a draw at level 12.
 
 © 2026 Frank Force. Free and open source under the [GPL-3.0 license](LICENSE).
 The AI uses evaluation weights from [Edax](https://github.com/abulmo/edax-reversi)
