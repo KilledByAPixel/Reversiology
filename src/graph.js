@@ -1,0 +1,38 @@
+// Win chance / disc lead graph along the current line of play.
+
+const W = 600, H = 150, PAD = 6;
+
+export function renderGraph(el, line, current, onPick, mark = () => null) {
+  const n = Math.max(line.length - 1, 20);
+  const x = i => PAD + (i / n) * (W - 2 * PAD);
+  const yWr = v => PAD + (1 - v) * (H - 2 * PAD);
+  const yScore = s => PAD + (0.5 - Math.max(-40, Math.min(40, s)) / 80) * (H - 2 * PAD);
+  let wr = '', sc = '', dots = '';
+  let pen = false;
+  line.forEach((node, i) => {
+    const an = node.analysis;
+    if (!an || an.blackWinrate == null) return; // not read yet: draw straight through, it fills in later
+    wr += `${pen ? 'L' : 'M'}${x(i).toFixed(1)} ${yWr(an.blackWinrate).toFixed(1)} `;
+    sc += `${pen ? 'L' : 'M'}${x(i).toFixed(1)} ${yScore(an.blackScore).toFixed(1)} `;
+    pen = true;
+    const m = mark(node);
+    if (m) dots += `<circle cx="${x(i)}" cy="${yWr(an.blackWinrate)}" r="${m.small ? 3.5 : 5.5}" fill="${m.color}" stroke="#fff" stroke-width="1.5"/>`;
+  });
+  const ci = line.indexOf(current);
+  el.innerHTML = `
+<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="graph-svg">
+  <rect x="0" y="0" width="${W}" height="${H / 2}" class="g-black"/>
+  <rect x="0" y="${H / 2}" width="${W}" height="${H / 2}" class="g-white"/>
+  <line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" class="g-mid"/>
+  ${ci >= 0 ? `<line x1="${x(ci)}" x2="${x(ci)}" y1="0" y2="${H}" class="g-cur"/>` : ''}
+  <path d="${sc}" class="g-score" vector-effect="non-scaling-stroke"/>
+  <path d="${wr}" class="g-wr" vector-effect="non-scaling-stroke"/>
+  ${dots}
+</svg>`;
+  el.onclick = e => {
+    const r = el.getBoundingClientRect();
+    const i = Math.round(((e.clientX - r.left) / r.width * W - PAD) / (W - 2 * PAD) * n);
+    const node = line[Math.max(0, Math.min(line.length - 1, i))];
+    if (node) onPick(node);
+  };
+}

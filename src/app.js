@@ -1,0 +1,981 @@
+// Reversiology controller: wires the game record, the opponent engine, the
+// coach engines and the board view together.
+import { BLACK, WHITE, EMPTY, PASS, CORNERS, sqName, parseSq } from './board.js';
+import { Game, reasonText, colorName } from './game.js';
+import { Engine, EnginePool } from './engine-client.js';
+import { LEVELS, levelSearch, pickLevelMove } from './levels.js';
+import { annotate, gradeMove, gradesMove, GRADES, describeScore, hintList, openingOf, bookMoves } from './coach.js';
+import { nodeFacts, moveFacts } from './explain.js';
+import { COACH_FOR, resolveLevel, gradeLabel, levelGrade, verdict, describe, describeNote, positionNotes } from './wording.js';
+import { stableDiscs, frontierDiscs, dangerSquares } from './concepts.js';
+import { BoardView } from './view.js';
+import { linkPoints, pointReadout, movePhrase, plainText, positionPhrase, resultPhrase } from './access.js';
+import { initAnnouncer, announce, speak, hush, setSpeech, repeatLast, speechAvailable } from './announce.js';
+import { renderGraph } from './graph.js';
+import { discSound, playSound, setSoundEnabled, SOUNDS, ZZFXSound } from './sound.js';
+
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const STORE = 'reversiology.v1';
+
+const TOGGLES = [
+  ['moves', 'Legal moves', 'A dot on every square where the side to move can play.', 'M'],
+  ['preview', 'Flip preview', 'Hover a square: rings mark the discs your move would flip, and the number says how many.', 'V'],
+  ['danger', 'Danger squares', 'Squares next to an empty corner. Playing there often lets the opponent take the corner: red for X-squares (diagonal), orange for C-squares (along the edge).', 'D'],
+  ['stable', 'Stable discs', 'A gold mark on discs that can never be flipped again.', 'T'],
+  ['frontier', 'Frontier', 'Dashed rings on discs next to an empty square. Fewer frontier discs usually means fewer moves for your opponent.', 'F'],
+  ['book', 'Opening book', 'In the opening, mark the moves that follow a named opening line.', 'K'],
+  ['feedback', 'Grade moves', 'After every move the coach says how good it was and what it would have played.', 'G'],
+  ['hints', 'Best moves', 'Always show the coach\'s favourite moves with the disc result it expects. Press H for a one-off hint instead.', 'B'],
+  ['numbers', 'Move numbers', 'Show the order the discs were played in.', 'N'],
+];
+
+// Coach depth: plies read in the midgame, empties solved exactly, time cap.
+const COACH_DEPTHS = {
+  quick: { depth: 6, exact: 14, maxTime: 4000 },
+  normal: { depth: 8, exact: 16, maxTime: 8000 },
+  deep: { depth: 10, exact: 18, maxTime: 20000 },
+};
+
+const DEFAULTS = {
+  human: BLACK,              // BLACK or WHITE vs the AI; 0 = study mode (you play both)
+  level: 2,
+  handicap: 0,               // corners given to the human (Black in study mode)
+  coach: true,
+  coachDepth: 'normal',
+  gradeAI: false,
+  coachFor: 'auto',
+  speak: false,
+  sound: true,
+  show: { moves: true, preview: true, danger: false, stable: false, frontier: false, book: false, feedback: true, hints: false, numbers: false },
+};
+
+let settings = structuredClone(DEFAULTS);
+let game = null;
+let resigned = 0;            // colour that resigned
+let hoverPt = null;
+let hoverByKey = false;      // hoverPt is the keyboard cursor, whose readout already says why a square can't be played
+let hintOn = false;
+let better = null;           // { node, move, pv } — coach move shown on node's board
+let flashMsg = null, flashTimer = 0;
+let aiNode = null, aiToken = 0;
+let aiBest = false;          // the current AI search is the "AI move" button's full-strength move
+let coachJobs = [];          // per coach engine: the node it is reading
+let locatePt = null;         // a square the player is hovering in the coach's text
+let threat = null;           // { node, pending | none | move, pv, facts, cost } — the opponent's idea
+let overShown = null;        // the finished position whose result was announced
+
+const COACHES = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 2));
+const opponent = new Engine('opponent');
+const coach = new EnginePool('coach', COACHES);
+// Answers "what would the opponent play if it were their move?"
+const scout = new Engine('scout');
+Engine.onError = (name, msg) => flash(`The ${name} engine stopped working (${msg}). Reload the page; if it keeps happening, try a current Chrome, Firefox or Safari.`, 'bad');
+Engine.onWarning = (name, msg) => { if (name === 'opponent') flash(`The evaluation couldn't load (${msg}), so the AI and coach are much weaker. Reload to try again.`, 'bad'); };
+const view = new BoardView($('#board'), { onClick, onHover, onCursor });
+
+// The keyboard cursor moved: say what's there.
+function onCursor(p) {
+  announce(pointReadout(game.current.board, p, q => game.check(q)), { cursor: true });
+}
+
+// ------------------------------------------------------------------ helpers
+
+const aiColor = () => settings.human ? 3 - settings.human : 0;
+const level = () => LEVELS[settings.level];
+const aiLabel = () => `AI (${level().name})`;
+const who = c => !settings.human ? colorName(c) : c === settings.human ? 'You' : 'AI';
+const whose = c => !settings.human ? `${colorName(c)}'s` : c === settings.human ? 'Your' : 'AI\'s';
+const plural = (n, w) => `${n} ${n === 1 ? w : w + 's'}`;
+const coachLevel = () => resolveLevel(settings.coachFor, settings.level);
+const coachOpts = () => ({ ...COACH_DEPTHS[settings.coachDepth] || COACH_DEPTHS.normal, all: true, minDepth: 4 });
+
+function isAITurn(node = game.current) {
+  const ai = aiColor();
+  return !resigned && ai && node.board.toPlay === ai && !game.isOver(node) && node.children.length === 0 && !node.board.mustPass;
+}
+
+function flash(text, kind = '') {
+  flashMsg = { text, kind };
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { flashMsg = null; renderStatus(); }, 5000);
+  renderStatus();
+  speak(text);
+}
+
+function pvDiscs(color, moves) {
+  // A continuation alternates colours, except across passes.
+  let c = color;
+  return moves.map(move => { const d = { move, color: c }; c = 3 - c; return d; });
+}
+
+// ------------------------------------------------------------------ game flow
+
+function newGame() {
+  cancelAI();
+  stopCoach();
+  game = new Game({ handicap: settings.handicap, handicapColor: settings.human || BLACK });
+  resigned = 0; better = null; hintOn = false; threat = null; overShown = null;
+  flashMsg = null;
+  afterChange();
+}
+
+function afterChange() {
+  if (aiNode && game.current !== aiNode) cancelAI();
+  save();
+  render();
+  scheduleCoach();
+  autoPass();
+  aiMove();
+}
+
+// A player without a legal move passes: played for them, with a note.
+function autoPass() {
+  const node = game.current;
+  if (resigned || aiNode || !node.board.mustPass || node.children.length) return;
+  const c = node.board.toPlay;
+  setTimeout(() => {
+    if (game.current !== node || node.children.length) return;
+    playMove(PASS, { news: `${who(c)} ${c === settings.human ? 'have' : 'has'} no legal move${c === settings.human ? ', so you pass' : ' and passes'}. ${who(3 - c)} ${3 - c === settings.human ? 'move' : 'moves'} again.` });
+  }, 350);
+}
+
+// human: the player's own move, which cuts off anything still being spoken.
+// news: shown and said in place of the usual move announcement (passes).
+function playMove(move, { human = false, news = '' } = {}) {
+  const r = game.check(move);
+  if (!r.ok) { flash(reasonText(r.reason), 'bad'); playSound('illegal'); return false; }
+  if (human) hush(); // a new move: they're done listening
+  const node = game.play(move);
+  if (news) flash(news);
+  else {
+    // Say the move; for ungraded (AI) moves add what the player must react to.
+    const note = isGraded(node) ? [] : describeNote(factsFor(node), { mover: node.color, you: settings.human });
+    announce([movePhrase(who(node.color), move, node.flipped.length), ...note].join(' '));
+  }
+  hintOn = false; better = null; threat = null;
+  if (move === PASS) playSound('pass');
+  else discSound(node.flipped.length, !!aiColor() && node.color === aiColor(), CORNERS.includes(move));
+  if (game.isOver()) finalRead(node);
+  tryGrade(node);
+  afterChange();
+  if (game.isOver()) gameOver();
+  // Replaying a move that already has a (taken-back) AI reply below it: the
+  // node isn't a leaf, but the AI should still answer.
+  else if (aiColor() && !resigned && game.toPlay === aiColor() && !game.current.board.mustPass) aiMove(true);
+  return true;
+}
+
+function onClick(p) {
+  if (resigned) { flash('You resigned. Take back to keep playing, or start a new game.'); return; }
+  if (aiNode) { flash('Hold on, the AI is thinking…'); return; }
+  const node = game.current;
+  if (game.isOver(node)) { flash('Neither player can move. The game is over.'); return; }
+  const ai = aiColor();
+  if (ai && node.board.toPlay === ai) {
+    flash('It\'s the AI\'s turn in this position. Press "AI move" to let it play, or step forward.');
+    return;
+  }
+  playMove(p, { human: true });
+}
+
+function onHover(p, byKey = false) {
+  hoverPt = p; hoverByKey = byKey;
+  renderBoard();
+  renderStatus();
+}
+
+function takeBack() {
+  // Nothing to take back at the start: leave the AI's first move alone.
+  if (!game.current.parent && !resigned) return;
+  cancelAI();
+  better = null; hintOn = false; threat = null;
+  // The first take back after resigning withdraws the resignation.
+  if (resigned) { resigned = 0; flash('Resignation withdrawn. Play on!'); afterChange(); return; }
+  playSound('undo');
+  game.undo();
+  const ai = aiColor();
+  // Back to a position where you choose: past the AI's moves and forced passes.
+  while (game.current.parent && ((ai && game.toPlay === ai) || game.current.board.mustPass || game.current.move === PASS)) game.undo();
+  overShown = null;
+  render();
+  announce(positionPhrase(game.current.depth, game.current.color, game.current.move));
+  save();
+  scheduleCoach();
+  // Back at the very start with the AI to move (you play White): let it move again.
+  if (ai && !game.current.parent && game.toPlay === ai) aiMove(true);
+}
+
+function resign() {
+  if (game.isOver()) return;
+  if (!settings.human) { flash('In study mode there is no opponent to resign to.'); return; }
+  if (resigned) return;
+  cancelAI();
+  resigned = settings.human;
+  playSound('lose');
+  flash('You resigned. No shame in that: step back through the game to see where it turned.');
+  afterChange();
+}
+
+// Shows what the opponent wants to play: the position read with them to move.
+async function toggleThreat() {
+  const node = game.current;
+  if (threat && threat.node === node) { threat = null; scout.cancel(); render(); return; }
+  if (game.isOver(node)) return;
+  const me = node.board.toPlay, opp = 3 - me;
+  const b = node.board.clone();
+  b.toPlay = opp;
+  if (!b.legalMoves().length) { threat = { node, none: true, opp, me }; render(); return; }
+  const mine = threat = { node, pending: true, opp, me };
+  render();
+  const res = annotate(await scout.search(b, { ...coachOpts(), maxTime: 5000, reportMs: 0 }));
+  if (threat !== mine) return; // cleared with Esc, or superseded by a newer request
+  const m = res && res.moves[0];
+  if (!m) { threat = null; render(); return; }
+  const after = b.clone();
+  const flipped = after.play(m.move);
+  const cost = node.analysisDone ? node.analysis.score + res.score : null;
+  threat = { node, opp, me, move: m.move, pv: pvDiscs(opp, [m.move, ...(m.pv || [])]), cost,
+    facts: moveFacts({ before: b, after, move: m.move, mover: opp, flipped }) };
+  render();
+}
+
+// ------------------------------------------------------------------ AI opponent
+
+function cancelAI() {
+  aiToken++;
+  if (aiNode) { opponent.cancel(); aiNode = null; }
+}
+
+// force: play even when it isn't the AI's turn (the "AI move" button, replays).
+// best: play the coach's best move instead of the level's move, reusing the
+// coach's read of this position when it has one.
+async function aiMove(force = false, best = false) {
+  const node = game.current;
+  if (aiNode || game.isOver(node) || resigned) return;
+  if (node.board.mustPass) { if (force) autoPass(); return; }
+  if (!force && !isAITurn(node)) return;
+  const token = ++aiToken;
+  const lv = level();
+  aiNode = node; aiBest = best;
+  render();
+  const t0 = performance.now();
+  let move;
+  if (best && node.analysisDone && node.analysis.moves.length) move = node.analysis.moves[0].move;
+  else {
+    const results = await opponent.search(node.board, best ? { ...coachOpts(), all: false, reportMs: 0 } : { ...levelSearch(lv), reportMs: 0 });
+    if (token !== aiToken) return;
+    if (!results) { aiNode = null; render(); return; }
+    move = best ? results.moves[0].move : pickLevelMove(results, lv, node.board);
+  }
+  // A short pause, so the move doesn't appear before your own has landed.
+  const wait = 450 - (performance.now() - t0);
+  if (wait > 0) await sleep(wait);
+  if (token !== aiToken) return;
+  aiNode = null;
+  if (game.current !== node) { render(); return; }
+  if (!game.check(move).ok) move = node.board.legalMoves()[0];
+  playMove(move);
+}
+
+// ------------------------------------------------------------------ coach
+
+const isGraded = node => gradesMove(node, settings.human, settings.gradeAI);
+
+// The coach's to-do list: the position on the board, the one before it (its
+// read grades the move just played), then outwards along the game.
+function coachQueue(max) {
+  const cur = game.current, out = [];
+  const want = n => {
+    if (!n || n.analysisDone || out.includes(n)) return;
+    if (game.isOver(n)) { finalRead(n); return; }
+    out.push(n);
+  };
+  want(cur);
+  if (cur.parent && isGraded(cur)) want(cur.parent);
+  const line = game.line(), idx = line.indexOf(cur);
+  // Reviewing: the next move's grade.
+  if (line[idx + 1] && isGraded(line[idx + 1])) want(cur);
+  want(line[idx + 1]);
+  for (let d = 1; d < line.length && out.length < max * 2; d++) {
+    want(line[idx - d]);
+    want(line[idx + d]);
+  }
+  return out.slice(0, max);
+}
+
+// Keeps each coach engine on one of the most urgent positions, pre-empting
+// background reads when something more urgent comes up.
+function scheduleCoach() {
+  if (!settings.coach) return;
+  const engines = coach.engines;
+  const want = coachQueue(engines.length);
+  const running = new Set(coachJobs.filter(Boolean));
+  for (const n of want) {
+    if (running.has(n)) continue;
+    let i = engines.findIndex((_, k) => !coachJobs[k]);
+    if (i < 0) i = coachJobs.findIndex(j => !want.includes(j));
+    if (i < 0) break;
+    startCoachJob(i, n);
+  }
+}
+
+function startCoachJob(i, node) {
+  coachJobs[i] = node;
+  // A position where the side to move must pass is read from the other side.
+  coach.engines[i].search(node.board, {
+    ...coachOpts(),
+    reportMs: 300,
+    onProgress: (res, done) => {
+      if (coachJobs[i] !== node || !res) return;
+      if (!res.depth && !done) return;
+      node.analysis = annotate(res);
+      if (done) node.analysisDone = true;
+      onAnalysis(node);
+    },
+  }).then(res => {
+    if (coachJobs[i] === node) coachJobs[i] = null;
+    if (res) scheduleCoach();
+  });
+}
+
+// A finished position needs no read: its result is the count.
+function finalRead(node) {
+  const b = node.board, s = b.toPlay === BLACK ? 1 : -1;
+  node.analysis = annotate({ toPlay: b.toPlay, over: true, exact: true, score: b.finalMargin() * s, moves: [], depth: 0, empties: b.empties });
+  node.analysisDone = true;
+  for (const ch of node.children) tryGrade(ch);
+}
+
+function stopCoach() {
+  coach.cancel();
+  coachJobs = [];
+}
+
+// Forgets the coach's reads so every position is read again.
+function rereadAll() {
+  const reset = n => { n.analysisDone = false; n.analysis = null; n.grade = null; n.announced = false; n.children.forEach(reset); };
+  reset(game.root);
+}
+
+// Grades node's move once the position before it has been read.
+function tryGrade(node) {
+  const parent = node.parent;
+  if (!parent || node.grade || !isGraded(node) || !parent.analysisDone) return;
+  const g = gradeMove(parent.analysis, node.move);
+  if (!g) return;
+  node.grade = g;
+  announceGrade(node);
+}
+
+// The coach's verdict on a move on screen, spoken once (after the read of
+// the position after it too, so the explanation is complete).
+function announceGrade(node) {
+  const cur = game.current;
+  if (node.announced || !node.grade || !settings.show.feedback || (node !== cur && node !== cur.parent)) return;
+  if (!node.analysisDone && !game.isOver(node)) return;
+  node.announced = true;
+  const level = coachLevel(), facts = factsFor(node), shown = levelGrade(node.grade, level, facts);
+  const lines = describe(facts, { level, mover: node.color, you: settings.human, shown });
+  announce(plainText(`Coach: ${shown.label}. ${verdict(node.grade, level, shown)} ${lines.join(' ')}`));
+}
+
+// What the coach knows about node's move so far (explain.js).
+function factsFor(node) {
+  return nodeFacts(node, { before: node.parent.analysisDone ? node.parent.analysis : null, after: node.analysisDone ? node.analysis : null });
+}
+
+let analysisRenderPending = false;
+function onAnalysis(node) {
+  for (const ch of node.children) tryGrade(ch);
+  if (node.grade) announceGrade(node);
+  if (analysisRenderPending) return;
+  analysisRenderPending = true;
+  // setTimeout rather than requestAnimationFrame: rAF stalls in hidden tabs/panes.
+  setTimeout(() => { analysisRenderPending = false; render(); }, 30);
+}
+
+// ------------------------------------------------------------------ game over
+
+function gameOver() {
+  const node = game.current;
+  if (overShown === node) return;
+  overShown = node;
+  const s = game.score(node);
+  announce(`Game over. ${resultPhrase(s)}`);
+  playSound(settings.human && s.winner !== settings.human ? 'lose' : 'win');
+  render();
+  $('#scorePanel').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); // stacked below the board on phones
+}
+
+// ------------------------------------------------------------------ navigation
+
+function goTo(node) {
+  cancelAI();
+  better = null; hintOn = false; threat = null;
+  locatePt = null; // the button it came from may be rebuilt without a focusout
+  game.goTo(node);
+  save(); render(); scheduleCoach();
+  announce(positionPhrase(node.depth, node.color, node.move));
+  aiMove(); // back at the newest position with the AI to move (only fires on a leaf)
+}
+
+function nav(where) {
+  const cur = game.current;
+  if (where === 'first') goTo(game.root);
+  else if (where === 'prev' && cur.parent) goTo(cur.parent);
+  else if (where === 'next') { const n = cur.lastChild || cur.children[0]; if (n) goTo(n); }
+  else if (where === 'last') { const line = game.line(); goTo(line[line.length - 1]); }
+}
+
+function showBetter(node) {
+  const g = node.grade, parent = node.parent;
+  if (!g || !parent) return;
+  goTo(parent);
+  const m = parent.analysis && parent.analysis.moves.find(x => x.move === g.bestMove);
+  better = { node: parent, move: g.bestMove, pv: pvDiscs(parent.board.toPlay, [g.bestMove, ...((m && m.pv) || [])]) };
+  const canClick = !resigned && (!aiColor() || parent.board.toPlay !== aiColor());
+  flash(`Coach's choice: ${sqName(g.bestMove)}. Numbered discs show how it expects play to go on. ${resigned ? 'Take back to keep playing' : canClick ? 'Click to try it' : `Press "Try ${sqName(g.bestMove)} instead" to play it`}, or ▶ to go back.`);
+  render();
+}
+
+function tryInstead(node) {
+  const g = node.grade;
+  if (!g || !node.parent) return;
+  if (resigned) { flash('You resigned. Take back to keep playing, or start a new game.'); return; }
+  goTo(node.parent);
+  playMove(g.bestMove, { human: true });
+}
+
+// ------------------------------------------------------------------ rendering
+
+// Graph dot for a move flagged at the current coach level.
+function graphMark(node) {
+  if (!node.grade || !isGraded(node)) return null;
+  const shown = levelGrade(node.grade, coachLevel(), factsFor(node));
+  return shown.flagged ? { color: shown.color, small: shown.key === 'inaccuracy' } : null;
+}
+
+// Replaces an element's HTML only when it changed, so a coach tick doesn't
+// rebuild buttons under the pointer (and take their focus). A focused button
+// that is rebuilt (same id, or same data-act and data-id) keeps the focus.
+function setHTML(el, html) {
+  if (el._html === html) return;
+  el._html = html;
+  const f = document.activeElement;
+  const sel = f && f !== el && el.contains(f) && (f.id ? `#${CSS.escape(f.id)}`
+    : ['act', 'id'].filter(k => f.dataset && f.dataset[k]).map(k => `[data-${k}="${CSS.escape(f.dataset[k])}"]`).join(''));
+  el.innerHTML = html;
+  const again = sel && el.querySelector(sel);
+  if (again) again.focus({ preventScroll: true });
+}
+
+function render() {
+  renderBoard();
+  renderPlayers();
+  renderCoach();
+  renderScorePanel();
+  renderNav();
+  renderStatus();
+  renderGraph($('#graph'), game.line(), game.current, goTo, graphMark);
+  renderReview();
+}
+
+function moveNumbers(node) {
+  const map = new Map();
+  let k = 0;
+  const path = [];
+  for (let n = node; n.parent; n = n.parent) path.unshift(n);
+  for (const n of path) if (n.move !== PASS) map.set(n.move, ++k);
+  return map;
+}
+
+function hoverInfo() {
+  const p = hoverPt, node = game.current, b = node.board;
+  if (p === null || aiNode || game.isOver(node) || b.color[p] !== EMPTY) return null;
+  if (resigned || (aiColor() && b.toPlay === aiColor())) return null;
+  const c = b.toPlay, r = game.check(p);
+  if (!r.ok) return { p, color: c, ok: false, reason: r.reason };
+  return { p, color: c, ok: true, flips: settings.show.preview ? b.flips(p) : null };
+}
+
+function renderBoard() {
+  const node = game.current, b = node.board, an = node.analysis, sh = settings.show;
+  const over = game.isOver(node);
+  const s = { board: b, nodeId: node.id, lastMove: node.parent ? node.move : PASS, flipped: node.flipped };
+  const aiToMove = aiColor() && !resigned && b.toPlay === aiColor() && node.children.length === 0;
+  if (sh.moves && !over && !aiToMove) s.moves = b.legalMoves();
+  if (sh.stable) s.stable = stableDiscs(b);
+  if (sh.frontier) s.frontier = frontierDiscs(b);
+  if (sh.danger && !over) s.danger = dangerSquares(b);
+  if (sh.numbers) s.numbers = moveNumbers(node);
+  const hintsVisible = an && (hintOn || sh.hints) && !over && !aiToMove;
+  if (hintsVisible) {
+    s.hints = hintList(an);
+    const m = hoverPt !== null && an.moves.find(x => x.move === hoverPt);
+    if (m && m.pv) s.pv = pvDiscs(b.toPlay, [m.move, ...m.pv]);
+  } else if (sh.book && !over && !aiToMove && node.depth < 30) {
+    const book = bookMoves(node);
+    if (book.length) s.hints = book.map(x => ({ move: x.move, rank: 1, color: '#7b5ea7', label: '📖', sub: '' }));
+  }
+  if (better && better.node === node) { s.better = better.move; s.pv = better.pv; }
+  if (threat && threat.node === node && threat.move != null) { s.threat = threat.move; s.pv = threat.pv; s.pvAccent = '#ff8787'; }
+  if (sh.feedback && node.grade && isGraded(node)) {
+    const shown = levelGrade(node.grade, coachLevel(), factsFor(node));
+    if (shown.key === 'mistake' || shown.key === 'blunder') s.grade = shown.color;
+  }
+  if (!s.pv) s.hover = hoverInfo();
+  if (locatePt !== null) s.locate = locatePt;
+  view.render(s);
+}
+
+function renderPlayers() {
+  const b = game.board;
+  for (const c of [BLACK, WHITE]) {
+    const el = $(c === BLACK ? '#pBlack' : '#pWhite');
+    el.querySelector('.pname').textContent = !settings.human ? colorName(c) : c === settings.human ? 'You' : aiLabel();
+    el.querySelector('.count').textContent = b.count(c);
+    el.classList.toggle('turn', !game.isOver() && b.toPlay === c && !resigned);
+    el.classList.toggle('thinking', !!aiNode && aiNode.board.toPlay === c);
+  }
+}
+
+function openingTip() {
+  if (!settings.human) return 'Study mode: you place discs for both colours. Turn on <b>Best moves</b> to compare your ideas with the coach.';
+  const hc = game.handicap ? ` You start with ${plural(game.handicap, 'corner')} as a handicap: corners can never be flipped, so use them.` : '';
+  if (settings.human === BLACK) return `Welcome! You are Black and move first. Click a square with a dot to place a disc: every move must trap a line of White's discs between your new disc and another of yours, and those discs flip to black. Take back any move with <kbd>U</kbd>.${hc}`;
+  return `You are White. The AI (Black) moves first. Every move must trap a line of your opponent's discs, which then flip to your colour.${hc}`;
+}
+
+function scoreLine(an) {
+  if (!an) return '&nbsp;';
+  const lv = coachLevel();
+  if (an.over) return '&nbsp;';
+  if (an.exact) {
+    const m = an.blackScore;
+    return m === 0 ? 'Perfect play from here: <b>a draw</b>.' : `Perfect play from here: <b>${m > 0 ? 'Black' : 'White'} wins by ${Math.abs(m)}</b>.`;
+  }
+  if (lv === 'beginner') return '&nbsp;';
+  return `Expected result: <b>${describeScore(an.blackScore)}</b> <span class="muted">discs</span>`;
+}
+
+function renderCoach() {
+  const node = game.current, an = node.analysis;
+  $('#coachStatus').textContent = !settings.coach ? 'off' : game.isOver(node) ? '' :
+    an ? `${an.exact ? 'solved' : `depth ${an.depth}`}${node.analysisDone ? '' : '…'}` : 'reading…';
+  const bw = an ? an.blackWinrate : 0.5;
+  $('#winB').style.width = `${(bw * 100).toFixed(1)}%`;
+  $('#winLabelB').textContent = an ? `Black ${Math.round(bw * 100)}%` : 'Black';
+  $('#winLabelW').textContent = an ? `${Math.round((1 - bw) * 100)}% White` : 'White';
+  setHTML($('#scoreEst'), scoreLine(an));
+
+  // The opening, while the game is in (or just left) the book.
+  const op = node.depth <= 40 ? openingOf(node) : null;
+  const opEl = $('#opening');
+  setHTML(opEl, op ? `Opening: <b>${op.name}</b>${op.current || op.inBook ? '' : ' <span class="muted">(out of book)</span>'}` : '');
+  opEl.hidden = !op;
+
+  // Feedback on the last two moves, so against the AI you see your own
+  // move's grade as well as the reply.
+  const fb = $('#feedback');
+  const entries = [];
+  if (node.parent && node.parent.parent && node.parent.move !== PASS) entries.push(node.parent);
+  if (node.parent) entries.push(node);
+  setHTML(fb, linkPoints(entries.length ? entries.map(moveEntry).join('') : `<p class="tip">${openingTip()}</p>`));
+  fb.onclick = e => {
+    const btn = e.target.closest && e.target.closest('[data-act]');
+    if (!btn) return;
+    const target = entries.find(n => n.id === +btn.dataset.id);
+    if (!target) return;
+    if (btn.dataset.act === 'show') showBetter(target);
+    if (btn.dataset.act === 'try') tryInstead(target);
+  };
+
+  // Live notes about the position on the board.
+  const notes = !game.isOver(node) && !resigned ? positionNotes(node.board, { who: c => who(c) }) : [];
+  setHTML($('#warnings'), linkPoints(notes.map(w => `<li class="${w.kind}">${w.text}</li>`).join('')));
+
+  const tb = $('#threatBox');
+  tb.hidden = !(threat && threat.node === node);
+  if (!tb.hidden) {
+    const oppName = !settings.human ? colorName(threat.opp) : threat.opp === settings.human ? 'you' : 'the AI';
+    const meName = !settings.human ? colorName(threat.me) : threat.me === settings.human ? 'you' : 'the AI';
+    if (threat.pending) setHTML(tb, 'Looking at the board from the opponent\'s side…');
+    else if (threat.none) setHTML(tb, `If it were ${oppName === 'you' ? 'your' : `${oppName}'s`} move, ${oppName} would have no legal move here.`);
+    else {
+      const lines = describe(threat.facts.filter(f => ['corner', 'givesCorner', 'forcesPass', 'stable', 'wipeout', 'xsquare', 'blocksCorner'].includes(f.type)),
+        { level: coachLevel(), mover: threat.opp, you: settings.human, intent: true });
+      setHTML(tb, linkPoints(`<p><b>Their idea:</b> if it were ${oppName === 'you' ? 'your' : `${oppName}'s`} move, ${oppName} would play <b>${sqName(threat.move)}</b>.` +
+        (threat.cost >= 2 && coachLevel() !== 'beginner' ? ` Letting ${oppName} play there first would cost ${meName} about <b>${plural(Math.round(threat.cost), 'disc')}</b>.` : '') + '</p>' +
+        (lines.length ? `<ul class="explain">${lines.map(t => `<li>${t}</li>`).join('')}</ul>` : '') +
+        '<p class="muted small">Numbered discs show how they expect it to continue. Press <kbd>O</kbd> again to hide.</p>'));
+    }
+  }
+}
+
+function renderReview() {
+  const el = $('#review'), level = coachLevel();
+  const stats = {};
+  for (const c of [BLACK, WHITE]) stats[c] = { n: 0, loss: 0, counts: {}, worst: [] };
+  for (const n of game.line()) {
+    const g = n.grade;
+    if (!g || !isGraded(n)) continue;
+    const s = stats[n.color], shown = levelGrade(g, level, factsFor(n));
+    s.n++;
+    s.loss += Math.min(g.ptLoss, 30);
+    if (!shown.flagged) continue;
+    s.counts[shown.key] = (s.counts[shown.key] || 0) + 1;
+    if (shown.key !== 'inaccuracy') s.worst.push(n);
+  }
+  if (!stats[BLACK].n && !stats[WHITE].n) { setHTML(el, ''); return; }
+  const row = c => {
+    const s = stats[c];
+    if (!s.n) return '';
+    const pills = ['blunder', 'mistake', 'inaccuracy'].filter(k => s.counts[k])
+      .map(k => `<span class="pill" style="--pill:${GRADES[k].color}">${plural(s.counts[k], gradeLabel(k, level).toLowerCase())}</span>`).join(' ');
+    const avg = level === 'beginner' ? '' : `<span class="muted">avg −${(s.loss / s.n).toFixed(1)} discs/move</span>`;
+    return `<div class="rv-row"><span class="disc-icon ${c === BLACK ? 'black' : 'white'}"></span><b>${who(c)}</b>` +
+      `${avg}${pills || '<span class="muted">no mistakes yet</span>'}</div>`;
+  };
+  const worst = [...stats[BLACK].worst, ...stats[WHITE].worst].sort((a, b) => b.grade.ptLoss - a.grade.ptLoss).slice(0, 5);
+  const chip = n => `<button class="chip" data-id="${n.id}" data-pt="${n.move}" title="Jump to this move">#${n.depth} ${sqName(n.move)}${level === 'beginner' ? '' : ` −${Math.round(n.grade.ptLoss)}`}</button>`;
+  setHTML(el, linkPoints(row(BLACK) + row(WHITE) + (worst.length ? `<div class="rv-worst"><span class="muted">Biggest:</span>${worst.map(chip).join('')}</div>` : '')));
+  el.onclick = e => {
+    const c = e.target.closest && e.target.closest('[data-id]');
+    const node = c && worst.find(n => n.id === +c.dataset.id);
+    if (node) goTo(node);
+  };
+}
+
+function moveEntry(node) {
+  const latest = node === game.current;
+  const head = pill => `<div class="fb-head">${pill}<span><b>${who(node.color)}</b> ${node.move === PASS ? 'passed' : `played <b>${sqName(node.move)}</b>`}</span></div>`;
+  const wrap = html => `<div class="fb-entry${latest ? ' latest' : ''}">${html}</div>`;
+  const list = lines => lines.length ? `<ul class="explain">${lines.map(t => `<li>${t}</li>`).join('')}</ul>` : '';
+  if (node.move === PASS) return wrap(head('') + `<p class="muted">No legal move, so a pass.</p>`);
+  const level = coachLevel(), facts = factsFor(node);
+  const ctx = { level, mover: node.color, you: settings.human };
+  // Ungraded (AI) moves: just what the player has to react to.
+  if (!isGraded(node)) return wrap(head('') + list(describeNote(facts, ctx)));
+  const g = node.grade;
+  let html;
+  if (!settings.show.feedback) html = head('');
+  else if (!g) html = head('<span class="pill pending">grading…</span>');
+  else {
+    ctx.shown = levelGrade(g, level, facts);
+    html = head(`<span class="pill" style="--pill:${ctx.shown.color}">${ctx.shown.label}</span>`) + `<p>${verdict(g, level, ctx.shown)}</p>`;
+    if (g.grade !== 'best' && g.bestMove !== PASS && g.ptLoss > 0) {
+      html += `<div class="fb-actions"><button data-act="show" data-id="${node.id}" data-pt="${g.bestMove}">Show ${sqName(g.bestMove)}</button>` +
+        `<button data-act="try" data-id="${node.id}" data-pt="${g.bestMove}">Try ${sqName(g.bestMove)} instead</button></div>`;
+    }
+  }
+  return wrap(html + list(describe(facts, ctx)));
+}
+
+// Suggests a better-matched opponent after a lopsided game. margin is black-minus-white.
+function levelAdvice(margin) {
+  if (!settings.human) return '';
+  const mine = margin * (settings.human === BLACK ? 1 : -1), lv = settings.level;
+  if (mine >= 20 && lv < LEVELS.length - 1) {
+    return `<p class="advice">Comfortable win! Try level ${lv + 2} · ${LEVELS[lv + 1].name} next (Settings → AI strength).</p>`;
+  }
+  if (mine <= -30 && lv > 0) {
+    return `<p class="advice">A tough one. Level ${lv} · ${LEVELS[lv - 1].name}, or a corner or two as a handicap, may be more fun for learning.</p>`;
+  }
+  return '';
+}
+
+function renderScorePanel() {
+  const el = $('#scorePanel');
+  const node = game.current, over = game.isOver(node);
+  if (!over && !resigned) { el.hidden = true; return; }
+  el.hidden = false;
+  if (resigned) {
+    setHTML(el, `<h2>${colorName(resigned)} resigned</h2><p class="big">${resigned === settings.human ? 'The AI wins this one.' : 'You win!'}</p>${levelAdvice(resigned === BLACK ? -99 : 99)}
+      <div class="fb-actions"><button data-act="new" class="primary">New game</button></div>`);
+  } else {
+    const s = game.score(node);
+    const winText = !s.winner ? 'A draw!' : !settings.human ? `${colorName(s.winner)} wins.` :
+      s.winner === settings.human ? 'You win! 🎉' : 'The AI wins this one.';
+    setHTML(el, `<h2>Game over · ${s.final[0]}–${s.final[1]}</h2>
+      <p class="big">${winText}</p>${levelAdvice(s.margin)}
+      <table class="score-table">
+        <tr><th></th><th>Black</th><th>White</th></tr>
+        <tr><td>Discs</td><td>${s.black}</td><td>${s.white}</td></tr>${s.empty ? `
+        <tr><td>Empty squares (to the winner)</td><td>${s.winner === BLACK ? s.empty : s.winner ? '' : s.empty / 2}</td><td>${s.winner === WHITE ? s.empty : s.winner ? '' : s.empty / 2}</td></tr>` : ''}
+        <tr class="total"><td>Total</td><td>${s.final[0]}</td><td>${s.final[1]}</td></tr>
+      </table>
+      <div class="fb-actions"><button data-act="review">Review the game</button><button data-act="new" class="primary">New game</button></div>`);
+  }
+  el.onclick = e => {
+    const act = e.target.dataset && e.target.dataset.act;
+    if (act === 'review') { goTo(game.root); flash('Review: step through with ◀ ▶ or click the graph. Dots mark mistakes.'); }
+    if (act === 'new') openNewGame();
+  };
+}
+
+function renderNav() {
+  const node = game.current;
+  $('#moveLabel').textContent = node.parent ? `Move ${node.depth} · ${colorName(node.color)} ${sqName(node.move)}` : 'Start';
+  $('[data-nav=first]').disabled = $('[data-nav=prev]').disabled = !node.parent;
+  $('[data-nav=next]').disabled = $('[data-nav=last]').disabled = !node.children.length;
+  $('#btnUndo').disabled = !node.parent && !resigned;
+  $('#btnAI').disabled = !!aiNode || game.isOver() || !!resigned;
+  $('#btnResign').disabled = game.isOver() || !settings.human || !!resigned;
+  $('#btnHint').classList.toggle('on', hintOn);
+  $('#btnThreat').classList.toggle('on', !!threat && threat.node === node);
+  $('#btnThreat').disabled = game.isOver();
+
+  let html = '';
+  const sibs = node.parent ? node.parent.children : [];
+  if (sibs.length > 1) {
+    html += `<span class="muted">Variations:</span>` + sibs.map((s, i) =>
+      `<button class="chip${s === node ? ' on' : ''}" data-id="${s.id}">${i === 0 ? '★ ' : ''}${sqName(s.move)}</button>`).join('');
+  }
+  if (node.children.length > 1) {
+    html += `<span class="muted">Continue with:</span>` + node.children.map(s =>
+      `<button class="chip" data-id="${s.id}">${sqName(s.move)}</button>`).join('');
+  }
+  const v = $('#variations');
+  setHTML(v, html);
+  v.onclick = e => {
+    const id = +(e.target.dataset && e.target.dataset.id);
+    const target = [...sibs, ...node.children].find(n => n.id === id);
+    if (target) goTo(target);
+  };
+}
+
+function renderStatus() {
+  const el = $('#message');
+  let text = '', kind = '';
+  const node = game.current;
+  const h = hoverPt !== null ? hoverInfo() : null;
+  if (h && !h.ok && !hoverByKey) { text = reasonText(h.reason); kind = 'bad'; }
+  else if (flashMsg) { text = flashMsg.text; kind = flashMsg.kind; }
+  else if (aiNode) text = aiBest ? 'Finding the best move…' : `${aiLabel()} is thinking…`;
+  else if (resigned) text = `${colorName(resigned)} resigned.`;
+  else if (game.isOver(node)) text = 'Neither player can move. The game is over.';
+  else if (node.board.mustPass) text = `${colorName(node.board.toPlay)} has no legal move and must pass.`;
+  else if (!settings.human) text = `${colorName(node.board.toPlay)} to play.`;
+  else if (node.board.toPlay === settings.human) text = `Your move (${colorName(settings.human)}).`;
+  else text = 'Viewing an earlier position. It\'s the AI\'s turn here: press "AI move", or ▶ to step forward.';
+  if (el.textContent !== text) el.textContent = text; // aria-live: don't re-announce on every hover
+  el.className = `message ${kind}`;
+}
+
+// ------------------------------------------------------------------ persistence
+
+// Child-index path from the root to node.
+const pathOf = node => { const p = []; for (let n = node; n.parent; n = n.parent) p.unshift(n.parent.children.indexOf(n)); return p; };
+
+function save() {
+  try {
+    localStorage.setItem(STORE, JSON.stringify({ settings, text: game.toText(), path: pathOf(game.current), resigned }));
+  } catch { /* storage unavailable */ }
+}
+
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(STORE));
+    if (!d) return false;
+    settings = { ...structuredClone(DEFAULTS), ...d.settings, show: { ...DEFAULTS.show, ...(d.settings && d.settings.show) } };
+    settings.level = Math.min(LEVELS.length - 1, Math.max(0, settings.level | 0));
+    if (!COACH_DEPTHS[settings.coachDepth]) settings.coachDepth = DEFAULTS.coachDepth;
+    settings.gradeAI = !!settings.gradeAI;
+    settings.speak = !!settings.speak;
+    if (!COACH_FOR.some(o => o.key === settings.coachFor)) settings.coachFor = DEFAULTS.coachFor;
+    if (![0, BLACK, WHITE].includes(settings.human)) settings.human = DEFAULTS.human;
+    if (![0, 1, 2, 3, 4].includes(settings.handicap)) settings.handicap = DEFAULTS.handicap;
+    game = Game.fromText(d.text || '');
+    let n = game.root;
+    for (const i of d.path || []) { if (!n.children[i]) break; n = n.children[i]; }
+    game.goTo(n);
+    resigned = d.resigned || 0;
+    overShown = game.isOver() ? game.current : null; // don't cheer again on reload
+    return true;
+  } catch (e) {
+    console.warn('Could not restore saved game', e);
+    return false;
+  }
+}
+
+function exportGame() {
+  const name = c => !settings.human ? colorName(c) : c === settings.human ? 'Human' : `Reversiology ${level().name}`;
+  const end = game.line().at(-1);
+  const s = game.isOver(end) ? game.score(end) : null;
+  const head = [`# Reversiology game, ${new Date().toISOString().slice(0, 10)}`, `# Black: ${name(BLACK)}`, `# White: ${name(WHITE)}`];
+  if (resigned) head.push(`# Result: ${colorName(resigned)} resigned`);
+  else if (s) head.push(`# Result: ${s.final[0]}-${s.final[1]}`);
+  head.push(`# Main line: ${game.transcript()}`);
+  const text = `${head.join('\n')}\n${game.toText()}\n`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  a.download = `reversiology-${new Date().toISOString().slice(0, 10)}.txt`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function importGame(text) {
+  try {
+    const g = Game.fromText(text);
+    cancelAI();
+    stopCoach();
+    game = g;
+    settings.human = 0;
+    resigned = 0; better = null; threat = null; overShown = null;
+    syncOptions();
+    flash('Game loaded in study mode (you play both colours). Step through it and watch the coach.');
+    afterChange();
+  } catch (e) {
+    flash(`Could not load that game: ${e.message}`, 'bad');
+  }
+}
+
+// ------------------------------------------------------------------ dialogs & controls
+
+function openNewGame() {
+  const dlg = $('#newGameDlg'), f = dlg.querySelector('form');
+  f.elements.color.value = String(settings.human);
+  f.elements.level.value = String(settings.level);
+  f.elements.handicap.value = String(settings.handicap);
+  dlg.returnValue = ''; // Esc keeps the previous returnValue, which would re-run newGame()
+  dlg.showModal();
+}
+
+function setupDialog() {
+  $('#levelList').innerHTML = LEVELS.map((l, i) =>
+    `<label class="level"><input type="radio" name="level" value="${i}"><span><b>${i + 1} · ${l.name}</b><small>${l.blurb}</small></span></label>`).join('');
+  const dlg = $('#newGameDlg'), f = dlg.querySelector('form');
+  dlg.addEventListener('close', () => {
+    if (dlg.returnValue !== 'ok') return;
+    settings.human = +f.elements.color.value;
+    settings.level = +f.elements.level.value;
+    settings.handicap = +f.elements.handicap.value;
+    syncOptions();
+    newGame();
+  });
+}
+
+function syncOptions() {
+  $('#optLevel').value = String(settings.level);
+  $('#optCoach').value = settings.coachDepth;
+  $('#optCoachFor').value = settings.coachFor;
+  $('#optGradeAI').checked = settings.gradeAI;
+  $('#optSpeak').checked = settings.speak;
+  $('#optSound').checked = settings.sound;
+  $('#toggles').querySelectorAll('input').forEach(i => { i.checked = !!settings.show[i.dataset.key]; });
+}
+
+function setupControls() {
+  $('#toggles').innerHTML = TOGGLES.map(([key, label, help, k]) =>
+    `<label class="toggle"><input type="checkbox" data-key="${key}"><span class="sw" aria-hidden="true"></span>` +
+    `<span class="tl">${label} <kbd>${k}</kbd></span><small>${help}</small></label>`).join('');
+  $('#toggles').addEventListener('change', e => {
+    const key = e.target.dataset.key;
+    if (!key) return;
+    settings.show[key] = e.target.checked;
+    save(); render();
+  });
+  $('#optLevel').innerHTML = LEVELS.map((l, i) => `<option value="${i}">${i + 1} · ${l.name}</option>`).join('');
+  $('#optLevel').onchange = e => { settings.level = +e.target.value; save(); render(); };
+  $('#optCoach').onchange = e => {
+    settings.coachDepth = e.target.value;
+    stopCoach();
+    rereadAll();
+    save(); render(); scheduleCoach();
+  };
+  $('#optCoachFor').innerHTML = COACH_FOR.map(o => `<option value="${o.key}">${o.label}</option>`).join('');
+  $('#optCoachFor').onchange = e => { settings.coachFor = e.target.value; save(); render(); };
+  $('#optGradeAI').onchange = e => {
+    settings.gradeAI = e.target.checked;
+    for (const n of game.line()) tryGrade(n);
+    save(); render(); scheduleCoach();
+  };
+  $('#optSound').onchange = e => { settings.sound = e.target.checked; setSoundEnabled(settings.sound); save(); if (settings.sound) playSound('disc'); };
+  $('#optSpeak').onchange = e => { settings.speak = e.target.checked; setSpeech(settings.speak); save(); announce(settings.speak ? 'Speech on.' : 'Speech off.'); };
+  if (!speechAvailable()) { $('#optSpeak').disabled = true; $('#speakNote').hidden = false; }
+  // Hovering (or focusing) a square the coach mentions circles it on the board.
+  const locate = p => { if (p !== locatePt) { locatePt = p; renderBoard(); } };
+  const ptOf = el => { const t = el && el.closest ? el.closest('[data-pt]') : null; return t ? +t.dataset.pt : null; };
+  for (const id of ['#feedback', '#warnings', '#threatBox', '#review']) {
+    const box = $(id);
+    box.addEventListener('pointerover', e => locate(ptOf(e.target)));
+    box.addEventListener('pointerout', e => { if (ptOf(e.relatedTarget) === null) locate(null); });
+    box.addEventListener('focusin', e => locate(ptOf(e.target)));
+    box.addEventListener('focusout', () => locate(null));
+  }
+
+  $('#btnUndo').onclick = takeBack;
+  $('#btnHint').onclick = () => {
+    hintOn = !hintOn;
+    if (hintOn && !game.current.analysis) flash('The coach is still reading this position…');
+    render();
+  };
+  $('#btnAI').onclick = () => aiMove(true, true);
+  $('#btnThreat').onclick = toggleThreat;
+  $('#btnResign').onclick = resign;
+  $('#btnNew').onclick = openNewGame;
+  $('#btnExport').onclick = exportGame;
+  $('#btnImport').onclick = () => $('#fileInput').click();
+  $('#fileInput').onchange = async e => {
+    const file = e.target.files[0];
+    if (file) importGame(await file.text());
+    e.target.value = '';
+  };
+  document.querySelectorAll('[data-nav]').forEach(btn => { btn.onclick = () => nav(btn.dataset.nav); });
+
+  const toggleKey = Object.fromEntries(TOGGLES.map(([key, , , k]) => [k.toLowerCase(), key]));
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target instanceof Element) {
+      // Leave typing alone, but a focused toggle or select must not swallow the game shortcuts.
+      if (e.target.closest('textarea, dialog, input:not([type=checkbox]):not([type=radio])')) return;
+      if (e.target.closest('select') && /^(Arrow|Home|End|Enter| )/.test(e.key)) return;
+    }
+    const k = e.key.toLowerCase();
+    if (e.key === 'ArrowLeft') nav('prev');
+    else if (e.key === 'ArrowRight') nav('next');
+    else if (e.key === 'Home') nav('first');
+    else if (e.key === 'End') nav('last');
+    else if (e.key === 'PageUp') nav('prev');
+    else if (e.key === 'PageDown') nav('next');
+    else if (k === 's') { if (!$('#optSpeak').disabled) $('#optSpeak').click(); }
+    else if (k === 'r') repeatLast();
+    else if (k === 'u' || e.key === 'Backspace') takeBack();
+    else if (k === 'h') $('#btnHint').click();
+    else if (k === 'o') toggleThreat();
+    else if (e.key === 'Escape') { better = null; hintOn = false; threat = null; scout.cancel(); render(); }
+    else if (toggleKey[k]) {
+      const key = toggleKey[k];
+      settings.show[key] = !settings.show[key];
+      syncOptions(); save(); render();
+    } else return;
+    e.preventDefault();
+  });
+}
+
+// ------------------------------------------------------------------ boot
+
+initAnnouncer($('#announcer'));
+setupControls();
+setupDialog();
+if (!load()) game = new Game();
+setSoundEnabled(settings.sound);
+setSpeech(settings.speak);
+syncOptions();
+afterChange();
+
+// Handy for debugging from the console, and for tests.
+window.reversi = {
+  get game() { return game; },
+  get settings() { return settings; },
+  get aiThinking() { return !!aiNode; },
+  get coachBusy() { return coach.busy; },
+  render, aiMove,
+  // Test hooks: play by name ("d3"), take back, start a game with options.
+  play: name => onClick(parseSq(name)),
+  takeBack,
+  // Sound tweaking: reversi.sounds.disc = new reversi.ZZFXSound([...]); reversi.playSound('disc')
+  sounds: SOUNDS, playSound, ZZFXSound,
+  newGame: (opts = {}) => { Object.assign(settings, opts); syncOptions(); newGame(); },
+};

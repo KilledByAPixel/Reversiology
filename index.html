@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reversiology · Learn Reversi</title>
+<meta name="description" content="Learn Reversi by playing. An AI opponent from beginner to superhuman, with a coach that grades and explains every move.">
+<meta name="theme-color" content="#1f7a4d">
+<link rel="canonical" href="https://killedbyapixel.github.io/Reversiology/">
+
+<!-- Social sharing (Open Graph is used by Facebook, Discord, Slack, LinkedIn…; Twitter reads its own tags first) -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Reversiology">
+<meta property="og:title" content="Reversiology · Reversi with an AI coach">
+<meta property="og:description" content="Learn Reversi by playing. Hints, move grades and live analysis as you play against an AI that scales from beginner to superhuman.">
+<meta property="og:url" content="https://killedbyapixel.github.io/Reversiology/">
+<meta property="og:image" content="https://killedbyapixel.github.io/Reversiology/social.png">
+<meta property="og:image:alt" content="A Reversi board next to the Reversiology coach panel and game graph">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Reversiology · Reversi with an AI coach">
+<meta name="twitter:description" content="Learn Reversi by playing. Hints, move grades and live analysis as you play against an AI that scales from beginner to superhuman.">
+<meta name="twitter:image" content="https://killedbyapixel.github.io/Reversiology/social.png">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231f7a4d'/><circle cx='22' cy='22' r='13' fill='%23111'/><circle cx='42' cy='22' r='13' fill='%23fafafa'/><circle cx='22' cy='42' r='13' fill='%23fafafa'/><circle cx='42' cy='42' r='13' fill='%23111'/></svg>">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="src/app.js"></script>
+</head>
+<body>
+<noscript><p style="margin:24px;font:16px system-ui">Reversiology needs JavaScript to run. Please enable it, or open the page in a current browser.</p></noscript>
+<div class="app">
+  <main class="board-col">
+    <header class="topbar">
+      <div class="brand">Reversi<span>ology</span></div>
+      <div class="players">
+        <div class="player" id="pBlack" title="Discs on the board">
+          <span class="disc-icon black"></span><span class="pname">Black</span><span class="count">2</span>
+        </div>
+        <div class="player" id="pWhite" title="Discs on the board">
+          <span class="disc-icon white"></span><span class="pname">White</span><span class="count">2</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="board" class="board-wrap"></div>
+
+    <div id="message" class="message" role="status" aria-live="polite"></div>
+    <div id="announcer" class="sr-only" aria-live="polite"></div>
+
+    <div class="controls">
+      <button id="btnUndo" title="Take back your last move (U)">↶ Take back</button>
+      <button id="btnHint" title="Show the coach's best moves (H)">💡 Hint</button>
+      <button id="btnThreat" title="What would the opponent play if it were their move? (O)">👁 Their idea</button>
+      <button id="btnAI" title="Play the coach's best move for the side to move (full strength, whatever the AI level)">🤖 AI move</button>
+      <button id="btnResign">Resign</button>
+      <button id="btnNew" class="primary">New game</button>
+    </div>
+
+    <div class="nav">
+      <button data-nav="first" title="Start (Home)">⏮</button>
+      <button data-nav="prev" title="Back (←)">◀</button>
+      <span id="moveLabel" class="move-label">Start</span>
+      <button data-nav="next" title="Forward (→)">▶</button>
+      <button data-nav="last" title="Latest (End)">⏭</button>
+    </div>
+    <div id="variations" class="variations"></div>
+  </main>
+
+  <aside class="side">
+    <section id="scorePanel" class="card score-panel" hidden></section>
+
+    <section class="card coach">
+      <h2>Coach <span id="coachStatus" class="muted small"></span></h2>
+      <div class="winbar" title="Chance of winning, according to the coach">
+        <div class="winbar-b" id="winB"></div>
+        <span id="winLabelB" class="wl wl-b">Black</span>
+        <span id="winLabelW" class="wl wl-w">White</span>
+      </div>
+      <div id="scoreEst" class="score-est">&nbsp;</div>
+      <div id="opening" class="opening" hidden></div>
+      <div id="feedback" class="feedback"></div>
+      <ul id="warnings" class="warnings"></ul>
+      <div id="threatBox" class="threat-box" hidden></div>
+    </section>
+
+    <section class="card">
+      <h2>Game graph <span class="muted small">click to jump</span></h2>
+      <div id="graph" class="graph"></div>
+      <div class="legend">
+        <span><i class="lg-wr"></i>Black win %</span>
+        <span><i class="lg-score"></i>Disc lead</span>
+        <span><i class="lg-dot" style="background:#e07b2c"></i>Mistake</span>
+      </div>
+      <div id="review" class="review"></div>
+    </section>
+
+    <section class="card">
+      <h2>Show on board</h2>
+      <div id="toggles" class="toggles"></div>
+    </section>
+
+    <section class="card">
+      <h2>Settings</h2>
+      <div class="settings">
+        <label>AI strength <select id="optLevel"></select></label>
+        <label>Coach depth
+          <select id="optCoach">
+            <option value="quick">Quick</option>
+            <option value="normal">Normal</option>
+            <option value="deep">Deep (slower)</option>
+          </select>
+        </label>
+        <small class="muted help">How far ahead the coach reads, and from how many empty squares it plays the ending out exactly (14, 16 or 18).</small>
+        <label>Coach explains for <select id="optCoachFor"></select></label>
+        <small class="muted help">Changes what the coach says, not how the AI plays.</small>
+        <label class="inline"><input type="checkbox" id="optGradeAI"> Grade AI moves</label>
+        <label class="inline"><input type="checkbox" id="optSound"> Sound</label>
+        <label class="inline"><input type="checkbox" id="optSpeak"> Speak announcements</label>
+        <small class="muted help" id="speakNote" hidden>Speech isn't available in this browser.</small>
+        <div class="row">
+          <button id="btnExport">Save game</button>
+          <button id="btnImport">Load game</button>
+          <input type="file" id="fileInput" accept=".txt,text/plain" hidden>
+        </div>
+      </div>
+    </section>
+
+    <section class="card learn">
+      <h2>Learn</h2>
+      <details open>
+        <summary>The rules in one minute</summary>
+        <p>Black moves first. Players take turns placing one disc of their colour on an empty square.</p>
+        <p><b>Every move must flip.</b> Place your disc so that one or more straight lines (across, down or diagonal) of your opponent's discs lie between it and another of your discs. All of them flip to your colour.</p>
+        <p><b>No move?</b> Then you pass, and your opponent moves again. You can't pass while you have a legal move.</p>
+        <p><b>End:</b> when neither player can move, usually because the board is full. The player with more discs wins.</p>
+        <p>Turn on <b>Legal moves</b> to see where you can play, and hover a square to see what it would flip.</p>
+      </details>
+      <details>
+        <summary>Corners and the squares next to them</summary>
+        <p>A disc in a <b>corner</b> can never be flipped, and it makes the discs along its edges safe too. Corners are the most valuable squares.</p>
+        <p>The squares next to an empty corner are dangerous: the one diagonally inside it is the <b>X-square</b>, the two along the edges are <b>C-squares</b>. A disc there often lets your opponent into the corner. Turn on <b>Danger squares</b> to see them.</p>
+      </details>
+      <details>
+        <summary>Why fewer discs can be better</summary>
+        <p>Flipping lots of discs early feels good, but it usually hurts: every disc next to an empty square (the <b>frontier</b>) gives your opponent something to flip.</p>
+        <p>Strong players aim for <b>mobility</b>: keeping many moves for themselves and few for the opponent. A player with few moves is soon forced into bad ones, like giving up a corner.</p>
+        <p>Good moves are often <b>quiet</b>: they flip a few discs in the middle of your group and create no new frontier.</p>
+      </details>
+      <details>
+        <summary>The endgame: stability and parity</summary>
+        <p><b>Stable discs</b> can never be flipped again: corners, and discs anchored to them along full edges. Turn on <b>Stable discs</b> to see them.</p>
+        <p><b>Parity:</b> near the end the empty squares split into regions. Playing the last move in a region is an advantage, so try to move into regions with an odd number of empty squares.</p>
+        <p>In the last moves the coach plays the game out exactly and tells you who wins with perfect play.</p>
+      </details>
+      <details>
+        <summary>Keyboard</summary>
+        <p><kbd>←</kbd>/<kbd>→</kbd> step · <kbd>Home</kbd>/<kbd>End</kbd> start/latest · <kbd>U</kbd> take back · <kbd>H</kbd> hint · <kbd>O</kbd> their idea · <kbd>Esc</kbd> clear markers<br>
+        <kbd>M</kbd> legal moves · <kbd>V</kbd> flip preview · <kbd>D</kbd> danger squares · <kbd>T</kbd> stable discs · <kbd>F</kbd> frontier · <kbd>K</kbd> opening book · <kbd>G</kbd> grades · <kbd>B</kbd> best moves · <kbd>N</kbd> numbers<br><kbd>Tab</kbd> to the board, then <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move · <kbd>Enter</kbd> play · <kbd>PgUp</kbd>/<kbd>PgDn</kbd> step · <kbd>S</kbd> speech · <kbd>R</kbd> repeat</p>
+      </details>
+    </section>
+
+    <footer class="credits">
+      © 2026 Frank Force · <a href="https://github.com/KilledByAPixel/Reversiology" target="_blank" rel="noopener">Free and open source on GitHub</a><br>
+      The evaluation comes from <a href="https://github.com/abulmo/edax-reversi" target="_blank" rel="noopener">Edax</a>; opening names from <a href="https://github.com/Nyanyan/Egaroucid" target="_blank" rel="noopener">Egaroucid</a>'s list.
+    </footer>
+  </aside>
+</div>
+
+<dialog id="newGameDlg">
+  <form method="dialog">
+    <h2>New game</h2>
+    <fieldset>
+      <legend>You play</legend>
+      <div class="seg">
+        <label><input type="radio" name="color" value="1"><span>⚫ Black (first)</span></label>
+        <label><input type="radio" name="color" value="2"><span>⚪ White</span></label>
+        <label><input type="radio" name="color" value="0"><span>Both (study)</span></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Opponent strength</legend>
+      <div id="levelList" class="levels"></div>
+    </fieldset>
+    <fieldset class="row">
+      <label>Handicap corners
+        <select name="handicap">
+          <option value="0">None</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+        </select>
+      </label>
+    </fieldset>
+    <p class="muted small">Handicap corners are yours from the start. Use them when the AI is winning too easily.</p>
+    <menu>
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button value="ok" class="primary">Start</button>
+    </menu>
+  </form>
+</dialog>
+</body>
+</html>
