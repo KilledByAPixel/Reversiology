@@ -122,8 +122,9 @@ export class Engine {
       }
       if (!complete) break;
       for (const m of moves) { m.score = m.next; m.depth = m.nextDepth; m.pv = m.nextPv; m.exact = isExact && m.bound === 0; }
-      // Stable sort keeps the earlier order among equals.
-      moves.sort((a, b) => b.score - a.score || (a.bound - b.bound));
+      // Exact scores before bounds that equal them (a bound is "at most");
+      // the stable sort keeps the earlier order among equals.
+      moves.sort((a, b) => b.score - a.score || (b.bound - a.bound));
       result = this.pack(base, moves, d, isExact, s.nodes, t0);
       yield { ...result, done: false };
     }

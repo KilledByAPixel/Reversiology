@@ -85,3 +85,20 @@ test('endgame solver agrees with a naive solver on random positions', () => {
     }
   }
 });
+
+test('best-move search agrees with scoring every move', async () => {
+  const { loadWeights } = await import('../tools/weights-io.js');
+  const w = loadWeights(new URL('../weights/eval.bin.gz', import.meta.url).pathname);
+  for (let g = 0; g < 40; g++) {
+    const b = new Board();
+    const plies = 6 + (g % 30);
+    for (let k = 0; k < plies && !b.isOver; k++) { const ms = b.legalMoves(); b.play(ms.length ? ms[rnd(ms.length)] : PASS); }
+    if (b.isOver || !b.legalMoves().length) continue;
+    const pos = positionFromColors(b.color, b.toPlay);
+    const all = new Engine(w).run(pos, { depth: 3, exact: 0, all: true });
+    const best = new Engine(w).run(pos, { depth: 3, exact: 0, all: false });
+    assert.equal(best.score, all.score);
+    // The move it picks scores as well as the best (a bound may tie, but must not be picked).
+    assert.equal(all.moves.find(m => m.move === best.moves[0].move).score, all.score, b.pretty());
+  }
+});
