@@ -60,6 +60,7 @@ let resigned = 0;            // colour that resigned
 let hoverPt = null;
 let hoverByKey = false;      // hoverPt is the keyboard cursor, whose readout already says why a square can't be played
 let hintOn = false;
+let warningsSaid = null;     // the position and notes last read out
 let better = null;           // { node, move, pv } — coach move shown on node's board
 let flashMsg = null, flashTimer = 0;
 let aiNode = null, aiToken = 0;
@@ -390,9 +391,14 @@ function announceGrade(node) {
   if (node.announced || !node.grade || !settings.show.feedback || (node !== cur && node !== cur.parent)) return;
   if (!node.analysisDone && !game.isOver(node)) return;
   node.announced = true;
+  announce(gradeSpeech(node));
+}
+
+// What the coach says about a graded move, as plain text ("Coach: Mistake. …").
+function gradeSpeech(node) {
   const level = coachLevel(), facts = factsFor(node).filter(f => f.type !== 'opening'), shown = levelGrade(node.grade, level, facts);
   const lines = describe(facts, { level, mover: node.color, you: settings.human, shown, resultSaid: verdictSaysResult(node.grade, level, shown) });
-  announce(plainText(`Coach: ${shown.label}. ${verdict(node.grade, level, shown)} ${lines.join(' ')}`));
+  return plainText(`Coach: ${shown.label}. ${verdict(node.grade, level, shown)} ${lines.join(' ')}`);
 }
 
 // What the coach knows about node's move so far (explain.js).
@@ -431,7 +437,9 @@ function goTo(node) {
   locatePt = null; // the button it came from may be rebuilt without a focusout
   game.goTo(node);
   save(); render(); scheduleCoach();
-  announce(positionPhrase(node.depth, node.color, node.move));
+  // Stepping through a game: the move, and the coach's verdict on it when there is one.
+  const graded = node.move !== PASS && node.grade && isGraded(node) && node.analysisDone && settings.show.feedback && puzzleSpoilersOk();
+  announce(positionPhrase(node.depth, node.color, node.move) + (graded ? ` ${gradeSpeech(node)}` : ''));
   aiMove(); // back at the newest position with the AI to move (only fires on a leaf)
 }
 
@@ -542,6 +550,7 @@ function renderBoard() {
     if (shown.key === 'mistake' || shown.key === 'blunder') s.grade = shown.color;
   }
   if (!s.pv) s.hover = hoverInfo();
+  s.coord = hoverPt; // the square under the pointer or keyboard cursor, disc or not
   if (locatePt !== null) s.locate = locatePt;
   view.render(s);
 }
@@ -616,8 +625,17 @@ function renderCoach() {
   };
 
   // Live notes about the position on the board.
-  const notes = !game.isOver(node) && !resigned ? positionNotes(node.board, { who: c => who(c) }) : [];
-  setHTML($('#warnings'), linkPoints(notes.map(w => `<li class="${w.kind}">${w.text}</li>`).join('')));
+  // (Not while a puzzle is unsolved: "You can take the a1 corner" gives it away.)
+  const notes = !game.isOver(node) && !resigned && puzzleSpoilersOk() ? positionNotes(node.board, { who: c => who(c) }) : [];
+  const warn = notes.map(w => `<li class="${w.kind}">${w.text}</li>`).join('');
+  setHTML($('#warnings'), linkPoints(warn));
+  // Screen readers and speech hear the notes too: once when they appear for a
+  // position (redraws don't repeat them), and again on coming back to it.
+  const warnKey = warn && `${node.id}|${warn}`;
+  if (warnKey !== warningsSaid) {
+    warningsSaid = warnKey;
+    if (warn) announce(plainText(notes.map(w => w.text).join(' ')));
+  }
 
   const tb = $('#threatBox');
   tb.hidden = !(threat && threat.node === node);

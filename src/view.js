@@ -260,8 +260,9 @@ export class BoardView {
     }
     this.layers.hover.innerHTML = hov;
 
-    // The hovered square's column letter and row number stand out on the edges.
-    const hp = h ? h.p : null;
+    // The pointed-at square's column letter and row number stand out on the edges
+    // (any square: a disc, or while the AI thinks, not only where a move previews).
+    const hp = s.coord ?? (h ? h.p : null);
     if (hp !== this.coordPt) {
       this.coordPt = hp;
       for (const t of this.coordTexts) t.classList.toggle('on', hp !== null && (+t.dataset.col === sqX(hp) || +t.dataset.row === sqY(hp)));
