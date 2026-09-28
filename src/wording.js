@@ -148,6 +148,24 @@ export function describe(facts, ctx) {
       case 'reply':
         if (S) out.push(`Best reply: ${sqName(f.move)}.`);
         break;
+      case 'vsBest': {
+        if (!flagged) break; // only a mistake needs the comparison
+        const b = `<b>${sqName(f.best)}</b>`;
+        if (f.why === 'corner') out.push(B ? `${b} would have taken the ${cornerName(f.corner)} corner.` : `${b} takes the ${cornerName(f.corner)} corner.`);
+        else if (f.why === 'keepsCorner') { if (!gives) out.push(`After ${b}, ${w.subj(opp)} couldn't reach the ${f.corners.map(cornerName).join(' or ')} corner.`); }
+        else if (f.why === 'pass') out.push(B ? `${b} would have left ${w.subj(opp)} with no move at all, so ${w.subj(opp)} would have had to pass.` : `${b} leaves ${w.subj(opp)} no move: a pass.`);
+        else if (f.why === 'mobility') out.push(B ? `After ${b}, ${w.subj(opp)} would have had fewer moves to choose from (${f.theirs} instead of ${f.mine}). Fewer choices often forces bad moves later.`
+          : S ? `${b}: ${colorName(opp)} mobility ${f.theirs} vs ${f.mine}.` : `${b} leaves ${w.subj(opp)} ${f.theirs} moves instead of ${f.mine}: keeping ${w.poss(opp)} choices low is the key idea in the midgame.`);
+        else if (f.why === 'frontier') { if (!B) out.push(S ? `${b}: frontier ${f.theirs} vs ${f.mine}.` : `${b} keeps ${w.poss(mover)} discs more tucked in: ${f.theirs} frontier discs instead of ${f.mine}.`); }
+        else if (f.why === 'stable') out.push(B ? `${b} would have made ${f.gain} more discs safe for good.` : `${b} gains ${f.gain} more stable discs.`);
+        else if (f.why === 'parity') { if (!B) out.push(S ? `${b}: odd region (${f.size}).` : `${b} plays into an odd region (${f.size} empties), keeping the last move there for ${w.subj(mover)}.`); }
+        else if (f.why === 'cornerLine') out.push(B ? `With ${b}, ${w.subj(mover)} could have won the ${cornerName(f.corner)} corner a few moves later.` : `${b} leads to ${w.subj(mover)} taking the ${cornerName(f.corner)} corner.`);
+        break;
+      }
+      case 'cornerSoon':
+        if (!flagged) break;
+        out.push(B ? `This gives ${w.subj(opp)} a way to take the ${cornerName(f.corner)} corner a few moves from now.` : `${cap(w.subj(opp))} can now work towards the ${cornerName(f.corner)} corner (the coach sees it ${f.plies} moves ahead).`);
+        break;
       case 'exact': {
         const [m, o] = f.discs;
         if (B) out.push(f.score > 0 ? `From here ${w.subj(mover)} can win for sure with perfect play.` : f.score < 0 ? `From here ${w.subj(opp)} can win with perfect play.` : 'With perfect play this ends in a draw.');
@@ -160,6 +178,7 @@ export function describe(facts, ctx) {
       }
     }
   }
+  if (flagged && !out.length && !ctx.intent) out.push('The reason is deeper than a single move: press <b>Show</b> to see how the coach expects play to go.');
   return out;
 }
 

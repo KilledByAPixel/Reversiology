@@ -570,10 +570,11 @@ function renderCoach() {
   setHTML($('#scoreEst'), scoreLine(an));
 
   // The opening, while the game is in (or just left) the book.
-  const op = node.depth <= 40 ? openingOf(node) : null;
+  const op = openingOf(node);
+  const showOp = op && (op.current || op.inBook || node.depth <= op.at.depth + 6);
   const opEl = $('#opening');
-  setHTML(opEl, op ? `Opening: <b>${op.name}</b>${op.current || op.inBook ? '' : ' <span class="muted">(out of book)</span>'}` : '');
-  opEl.hidden = !op;
+  setHTML(opEl, showOp ? `Opening: <b>${op.name}</b>${op.current || op.inBook ? '' : ' <span class="muted">(now out of book)</span>'}` : '');
+  opEl.hidden = !showOp;
 
   // Feedback on the last two moves, so against the AI you see your own
   // move's grade as well as the reply.

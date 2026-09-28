@@ -62,8 +62,51 @@ export function moveFacts({ before, after, move, mover, flipped = [], reads = {}
     if (CORNERS.includes(reply.move)) facts.push({ type: 'threat', move: reply.move, corner: true });
     else facts.push({ type: 'reply', move: reply.move });
   }
+  // A corner the opponent reaches within a few moves in the expected line.
+  if (an && an.moves && an.moves.length) {
+    const c = cornerInLine([an.moves[0].move, ...(an.moves[0].pv || [])], an.toPlay, opp, 5);
+    if (c && !facts.some(f => f.type === 'threat' || (f.type === 'givesCorner'))) facts.push({ type: 'cornerSoon', corner: c.move, plies: c.ply });
+  }
   if (an && an.exact) facts.push({ type: 'exact', score: -an.score, discs: finalDiscs(after, mover, -an.score) });
   return facts;
+}
+
+// The first corner `who` plays within `max` moves of a line (passes, -1,
+// don't count as moves but hand the turn over). first: colour of line[0].
+export function cornerInLine(line, first, who, max) {
+  let c = first;
+  for (let i = 0; i < line.length && i < max; i++) {
+    const m = line[i];
+    if (m >= 0 && c === who && CORNERS.includes(m)) return { move: m, ply: i + 1 };
+    c = 3 - c;
+  }
+  return null;
+}
+
+// Why the coach's move `best` beats `move`: what it does that the move
+// doesn't. Facts of type 'vsBest' with a `why`.
+export function compareFacts(before, move, best, mover) {
+  if (best == null || best === PASS || move === best || move === PASS) return [];
+  const opp = 3 - mover, out = [];
+  const play = m => { const b = before.clone(); b.toPlay = mover; const f = b.play(m); return { b, f }; };
+  const mine = play(move), theirs = play(best);
+  const oppMoves = r => r.b.legalMoves(opp);
+  const mo = oppMoves(mine), bo = oppMoves(theirs);
+  if (CORNERS.includes(best) && !CORNERS.includes(move)) out.push({ type: 'vsBest', why: 'corner', best, corner: best });
+  const cornersAfter = r => oppMoves(r).filter(p => CORNERS.includes(p));
+  const gaveMine = cornersAfter(mine).length, gaveBest = cornersAfter(theirs).length;
+  if (gaveMine > gaveBest) out.push({ type: 'vsBest', why: 'keepsCorner', best, corners: cornersAfter(mine) });
+  if (!bo.length && !theirs.b.isOver && mo.length) out.push({ type: 'vsBest', why: 'pass', best });
+  else if (mo.length >= bo.length + 3 && before.empties > 12) out.push({ type: 'vsBest', why: 'mobility', best, mine: mo.length, theirs: bo.length });
+  const fr = r => frontierDiscs(r.b, mover).size;
+  if (fr(mine) >= fr(theirs) + 3 && before.empties > 16) out.push({ type: 'vsBest', why: 'frontier', best, mine: fr(mine), theirs: fr(theirs) });
+  const st = r => countOf(stableDiscs(r.b), r.b, mover);
+  if (st(theirs) >= st(mine) + 3) out.push({ type: 'vsBest', why: 'stable', best, gain: st(theirs) - st(mine) });
+  if (before.empties <= 18) {
+    const regions = emptyRegions(before), rm = regionOf(regions, move), rb = regionOf(regions, best);
+    if (regions.length > 1 && rm && rb && rm.length % 2 === 0 && rb.length % 2 === 1) out.push({ type: 'vsBest', why: 'parity', best, size: rb.length });
+  }
+  return out;
 }
 
 // A final disc count for a perfect-play margin, as [mover, opponent] out of 64.
@@ -78,6 +121,16 @@ export function nodeFacts(node, reads) {
   if (node.factsKey === key) return node.facts;
   node.factsKey = key;
   node.facts = moveFacts({ before: node.parent.board, after: node.board, move: node.move, mover: node.color, flipped: node.flipped, reads });
+  // Against the coach's choice, once the read before the move has one.
+  const best = reads.before && reads.before.moves && reads.before.moves[0];
+  if (best && best.move !== node.move) {
+    node.facts.push(...compareFacts(node.parent.board, node.move, best.move, node.color));
+    // The coach's line wins a corner soon, and this one doesn't.
+    const c = cornerInLine([best.move, ...(best.pv || [])], node.color, node.color, 5);
+    const played = reads.after && reads.after.moves && reads.after.moves[0];
+    const mine = played && cornerInLine([played.move, ...(played.pv || [])], 3 - node.color, node.color, 4);
+    if (c && c.move !== best.move && !mine) node.facts.push({ type: 'vsBest', why: 'cornerLine', best: best.move, corner: c.move });
+  }
   return node.facts;
 }
 

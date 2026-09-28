@@ -131,7 +131,8 @@ export class BoardView {
     let under = '';
     if (s.danger) {
       for (const [p, kind] of s.danger) {
-        under += `<rect x="${X(p) - CELL / 2 + 3}" y="${Y(p) - CELL / 2 + 3}" width="${CELL - 6}" height="${CELL - 6}" fill="${kind === 'x' ? RED : ORANGE}" fill-opacity="${kind === 'x' ? 0.32 : 0.2}"/>`;
+        const k = kind === 'x' ? '#ff6b6b' : '#ffa94d';
+        under += `<rect x="${X(p) - CELL / 2 + 8}" y="${Y(p) - CELL / 2 + 8}" width="${CELL - 16}" height="${CELL - 16}" rx="10" fill="${k}" fill-opacity="0.16" stroke="${k}" stroke-width="5" stroke-dasharray="${kind === 'x' ? 'none' : '10 7'}" stroke-opacity="0.85"/>`;
       }
     }
     this.layers.under.innerHTML = under;
