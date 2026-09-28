@@ -101,10 +101,15 @@ export function packWeights(stages, stageOfPly, q = 8) {
   return bytes;
 }
 
-// Browser: fetches and unpacks a gzipped weights file.
+// Browser: fetches and unpacks a gzipped weights file. Some hosts serve .gz
+// files already decompressed, so it checks for the gzip header first.
 export async function fetchWeights(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`couldn't load the evaluation (${res.status})`);
-  const buf = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-  return unpackWeights(new Uint8Array(buf));
+  let bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    const out = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    bytes = new Uint8Array(await new Response(out).arrayBuffer());
+  }
+  return unpackWeights(bytes);
 }

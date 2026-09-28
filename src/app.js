@@ -655,7 +655,9 @@ function moveEntry(node) {
   const wrap = html => `<div class="fb-entry${latest ? ' latest' : ''}">${html}</div>`;
   const list = lines => lines.length ? `<ul class="explain">${lines.map(t => `<li>${t}</li>`).join('')}</ul>` : '';
   if (node.move === PASS) return wrap(head('') + `<p class="muted">No legal move, so a pass.</p>`);
-  const level = coachLevel(), facts = factsFor(node);
+  const level = coachLevel();
+  // The opening has its own line above.
+  const facts = factsFor(node).filter(f => f.type !== 'opening');
   const ctx = { level, mover: node.color, you: settings.human };
   // Ungraded (AI) moves: just what the player has to react to.
   if (!isGraded(node)) return wrap(head('') + list(describeNote(facts, ctx)));
