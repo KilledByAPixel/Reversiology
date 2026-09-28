@@ -1,0 +1,11 @@
+{
+  "name": "reversiology",
+  "license": "GPL-3.0-only",
+  "version": "0.1.0",
+  "description": "Learn Reversi by playing: an AI opponent at your level and a coach that grades and explains every move.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}
