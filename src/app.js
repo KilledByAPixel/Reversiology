@@ -852,6 +852,21 @@ function showPuzzleAnswer() {
   render();
 }
 
+// Carries on from the puzzle's position as a game against the AI. It takes
+// the place of the game that was in progress.
+function playOutPuzzle() {
+  if (!puzzle) return;
+  const side = puzzle.p.board.toPlay;
+  cancelAI();
+  stopCoach();
+  puzzle = null;
+  settings.human = side;
+  resigned = 0; better = null; hintOn = false; threat = null; overShown = null;
+  syncOptions();
+  flash(`Playing it out against ${aiLabel()}. Take back or start a new game any time.`);
+  afterChange();
+}
+
 function leavePuzzles() {
   if (!puzzle) return;
   cancelAI();
@@ -889,7 +904,8 @@ function renderPuzzle() {
       (ok || puzzle.shown ? `<p class="lesson">${THEME_LESSONS[p.theme] || THEME_LESSONS.best}</p>` : '') +
       (!ok && puzzle.shown && puzzle.reveal.length ? `<ul class="explain">${puzzle.reveal.map(t => `<li>${t}</li>`).join('')}</ul>` : '') +
       (!ok && !puzzle.shown && !puzzle.lines.length ? '<p class="muted">There\'s a better move here. Try again, or ask for a hint.</p>' : '') +
-      `<div class="fb-actions">${ok ? '' : `<button data-act="retry">Try again</button>${puzzle.hint ? '' : '<button data-act="hint">Hint</button>'}${puzzle.shown ? '' : '<button data-act="answer">Show answer</button>'}`}<button data-act="next" class="primary">Next puzzle</button></div>` +
+      `<div class="fb-actions">${ok ? '' : `<button data-act="retry">Try again</button>${puzzle.hint ? '' : '<button data-act="hint">Hint</button>'}${puzzle.shown ? '' : '<button data-act="answer">Show answer</button>'}`}<button data-act="next" class="primary">Next puzzle</button>` +
+      (ok || puzzle.shown ? `<button data-act="playout" title="Continue from here against the AI (${LEVELS[settings.level].name}). This replaces your game in progress.">Play it out vs AI</button>` : '') + '</div>' +
       (!ok && puzzle.hint ? `<p class="hint-line">💡 ${THEME_HINTS[p.theme] || THEME_HINTS.best}</p>` : '');
   }
   setHTML(el, linkPoints(`<h2>Puzzle · ${DIFFICULTY[p.difficulty]} <span class="muted small">${solved} solved of ${PUZZLE_TOTAL}</span></h2>` + body +
@@ -901,6 +917,7 @@ function renderPuzzle() {
     if (act === 'retry') retryPuzzle();
     if (act === 'next') startPuzzle(nextPuzzle(puzzleProgress.solved, puzzleProgress.difficulty, p.index));
     if (act === 'leave') leavePuzzles();
+    if (act === 'playout') playOutPuzzle();
   };
   el.onchange = e => {
     if (e.target.dataset.act !== 'difficulty') return;

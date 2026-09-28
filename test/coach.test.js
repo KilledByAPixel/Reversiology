@@ -141,3 +141,21 @@ test('describeScore and access helpers', () => {
   assert.match(pointReadout(g.board, parseSq('a1'), p => g.check(p)), /can't play/);
   assert.equal(resultPhrase({ winner: BLACK, final: [40, 24] }), 'Black wins 40 to 24.');
 });
+
+test('wedges: playing one, and leaving a gap for one', async () => {
+  const { edgeNeighbours, wedgeGaps } = await import('../src/explain.js');
+  assert.deepEqual(edgeNeighbours(parseSq('d1')), [parseSq('c1'), parseSq('e1')]);
+  assert.deepEqual(edgeNeighbours(parseSq('a4')), [parseSq('a3'), parseSq('a5')]);
+  assert.equal(edgeNeighbours(parseSq('a1')), null);
+  assert.equal(edgeNeighbours(parseSq('d4')), null);
+  // White edge discs at c1 and e1 with d1 empty; Black can play d1 (flanking d2 with d3).
+  const b = Board.fromString('--O-O---' + '---O----' + '---X----' + '--------'.repeat(5), BLACK);
+  assert.deepEqual(wedgeGaps(b, WHITE), [parseSq('d1')]);
+  const after = b.clone();
+  const flipped = after.play(parseSq('d1'));
+  assert.ok(flipped && flipped.length);
+  const facts = moveFacts({ before: b, after, move: parseSq('d1'), mover: BLACK, flipped });
+  assert.ok(facts.some(f => f.type === 'wedge'));
+  const lines = describe(facts, { level: 'improving', mover: BLACK, you: BLACK, shown: { flagged: false } });
+  assert.ok(lines.some(l => /wedge/i.test(l)), lines.join(' | '));
+});

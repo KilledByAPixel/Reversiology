@@ -124,6 +124,18 @@ export function describe(facts, ctx) {
         out.push(B ? `${cap(w.subj(opp))} could have taken the ${c} corner, and now can't.` : `Takes away ${w.poss(opp)} move to the ${c} corner.`);
         break;
       }
+      case 'wedge':
+        if (flagged) break; // a wedge that loses isn't worth praising
+        out.push(B ? `Wedges in between two of ${w.poss(opp)} discs on the edge. ${cap(w.subj(opp))} can't flip it back along the edge, so it stays.`
+          : S ? 'Wedge.' : `A wedge: squeezed between two of ${w.poss(opp)} edge discs, it can't be flipped along the edge and splits ${w.poss(opp)} edge in two.`);
+        break;
+      case 'allowsWedge': {
+        if (!ctx.shown || !flagged || ctx.intent) break;
+        const sqs = f.squares.map(q => `<b>${sqName(q)}</b>`).join(' and ');
+        out.push(B ? `This leaves a gap in ${w.poss(mover)} edge at ${sqs}, and ${w.subj(opp)} can squeeze a disc in there (a wedge).`
+          : `Leaves a gap at ${sqs} that ${w.subj(opp)} can wedge into.`);
+        break;
+      }
       case 'forcesPass':
         out.push(B ? `${cap(w.subj(opp))} ${w.verb(opp, 'have', 'has')} no move left and must pass, so ${w.subj(mover)} ${w.verb(mover, 'move', 'moves')} again!`
           : `${cap(w.subj(opp))} must pass: ${w.subj(mover)} ${w.verb(mover, 'get', 'gets')} another move.`);

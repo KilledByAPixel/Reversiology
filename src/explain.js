@@ -28,6 +28,13 @@ export function moveFacts({ before, after, move, mover, flipped = [], reads = {}
   const shut = [...oppBefore].filter(p => CORNERS.includes(p) && !oppAfter.includes(p) && p !== move);
   if (shut.length) facts.push({ type: 'blocksCorner', corners: shut });
 
+  // Edges: a wedge between two opponent discs, or a gap left in the mover's
+  // own edge that the opponent can now wedge into.
+  const between = edgeNeighbours(move);
+  if (between && between.every(q => before.color[q] === opp)) facts.push({ type: 'wedge', square: move });
+  const gaps = wedgeGaps(after, mover).filter(q => oppAfter.includes(q) && !(wedgeGaps(before, mover).includes(q) && oppBefore.has(q)));
+  if (gaps.length) facts.push({ type: 'allowsWedge', squares: gaps });
+
   // Mobility: how many moves the opponent has now, against before the move.
   const myAfter = legalFor(after, mover).length;
   if (!oppAfter.length && !after.isOver) facts.push({ type: 'forcesPass' });
@@ -71,6 +78,27 @@ export function moveFacts({ before, after, move, mover, flipped = [], reads = {}
   }
   if (an && an.exact) facts.push({ type: 'exact', score: -an.score, discs: finalDiscs(after, mover, -an.score) });
   return facts;
+}
+
+// The two squares either side of an edge square, along the edge (null off
+// the edges and at the corners).
+export function edgeNeighbours(p) {
+  const x = p & 7, y = p >> 3;
+  if ((y === 0 || y === 7) && x > 0 && x < 7) return [p - 1, p + 1];
+  if ((x === 0 || x === 7) && y > 0 && y < 7) return [p - 8, p + 8];
+  return null;
+}
+
+// Empty edge squares with `color`'s discs on both sides along the edge:
+// where the other side could wedge in.
+export function wedgeGaps(board, color) {
+  const out = [];
+  for (let p = 0; p < 64; p++) {
+    if (board.color[p] !== EMPTY) continue;
+    const n = edgeNeighbours(p);
+    if (n && n.every(q => board.color[q] === color)) out.push(p);
+  }
+  return out;
 }
 
 // The first corner `who` plays within `max` moves of a line (passes, -1,
