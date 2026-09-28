@@ -68,8 +68,13 @@ No build step: open `index.html` through any static web server
 (`python3 -m http.server`). Everything is plain ES modules.
 
 - `npm test` runs the tests (node 20+).
-- `node tools/build.js` builds a self-contained copy in `dist/` for hosts such
-  as itch.io, with a zip ready to upload.
+- Every push to `main` publishes the game to GitHub Pages
+  (`.github/workflows/pages.yml`): it runs the tests, then `tools/build.js`
+  bundles the code and stamps every file with a hash of its contents, so
+  visitors never mix cached old files with new ones; the page reloads once if
+  a newer version is out.
+- `node tools/build.js` builds the same site in `dist/`, with a zip ready to
+  upload to hosts such as itch.io.
 - `tools/levels.js` plays levels against each other, `tools/edax-match.js`
   plays against Edax, `tools/ffo.js` solves the FFO endgame test positions,
   `tools/bench.js` measures search speed, `tools/winrate.js` fits the win
