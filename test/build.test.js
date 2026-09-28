@@ -35,6 +35,6 @@ test('build: the page knows its version and checks for a newer one', () => {
 });
 
 test('build: everything the page needs is there, and no zip when asked not to', () => {
-  for (const f of ['social.jpg', 'LICENSE', 'weights/eval.bin.gz', 'engine/core.wasm']) assert.ok(existsSync(join(out, f)), f);
+  for (const f of ['social.jpg', 'icon-32.png', 'icon-192.png', 'apple-touch-icon.png', 'LICENSE', 'weights/eval.bin.gz', 'engine/core.wasm']) assert.ok(existsSync(join(out, f)), f);
   assert.ok(!existsSync(join(out, 'reversiology.zip')));
 });

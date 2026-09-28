@@ -23,7 +23,9 @@
 <meta name="twitter:description" content="Learn Reversi by playing. Hints, move grades and live analysis as you play against an AI that scales from beginner to superhuman.">
 <meta name="twitter:image" content="https://killedbyapixel.github.io/Reversiology/social.jpg">
 
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231f7a4d'/><circle cx='22' cy='22' r='13' fill='%23111'/><circle cx='42' cy='22' r='13' fill='%23fafafa'/><circle cx='22' cy='42' r='13' fill='%23fafafa'/><circle cx='42' cy='42' r='13' fill='%23111'/></svg>">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
 <script type="module" src="src/app.js"></script>
 </head>
@@ -32,7 +34,7 @@
 <div class="app">
   <main class="board-col">
     <header class="topbar">
-      <div class="brand">Reversi<span>ology</span></div>
+      <div class="brand"><img class="logo" src="icon-192.png" alt="" width="28" height="28">Reversi<span>ology</span></div>
       <div class="players">
         <div class="player" id="pBlack" title="Discs on the board, and legal moves">
           <span class="disc-icon black"></span><span class="pname">Black</span><span class="count">2</span><span class="mob" title="Legal moves (mobility)" hidden></span>

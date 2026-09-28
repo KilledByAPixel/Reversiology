@@ -59,7 +59,8 @@ kbd {
   width: 100%; max-width: min(100%, calc(100vh - 170px)); min-width: min(100%, 420px);
   display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; flex-wrap: wrap;
 }
-.brand { font-weight: 750; font-size: 20px; letter-spacing: .2px; }
+.brand { font-weight: 750; font-size: 20px; letter-spacing: .2px; white-space: nowrap; }
+.brand .logo { width: 28px; height: 28px; border-radius: 6px; vertical-align: -7px; margin-right: 8px; }
 .brand span { color: var(--accent); font-weight: 600; }
 .players { display: flex; gap: 8px; }
 .player {
