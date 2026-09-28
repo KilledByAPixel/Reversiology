@@ -200,6 +200,7 @@ export class Search {
     // Reading to the end of the game: solve it exactly instead.
     if (depth >= empties) return this.solveRoot(pl, ph, ol, oh, alpha, beta, empties, ply);
     if (depth <= 0) return this.evalInt(ply, color, pl, ph, ol, oh);
+    if (depth === 1) return this.search1(pl, ph, ol, oh, color, alpha, beta, ply, passed);
 
     mobility(pl, ph, ol, oh);
     let ml = R.lo, mh = R.hi;
@@ -271,6 +272,30 @@ export class Search {
       }
     }
     this.ttStore(pl, ph, ol, oh, depth, a0, beta, best, bestMove);
+    return best;
+  }
+
+  // One ply: every move's evaluation, best first to beat beta. No table and
+  // no ordering, which cost more than they save this close to the leaves.
+  search1(pl, ph, ol, oh, color, alpha, beta, ply, passed) {
+    mobility(pl, ph, ol, oh);
+    let ml = R.lo, mh = R.hi;
+    if (!(ml | mh)) {
+      if (passed) return finalScore(pl, ph, ol, oh);
+      this.nodes++;
+      return -this.search1(ol, oh, pl, ph, 3 - color, -beta, -alpha, ply, true);
+    }
+    let best = -INF;
+    while (ml | mh) {
+      let sq;
+      if (ml) { sq = lowBit(ml); ml &= ml - 1; } else { sq = lowBit(mh) + 32; mh &= mh - 1; }
+      flips(sq, pl, ph, ol, oh);
+      const fl = R.lo, fh = R.hi;
+      if (this.weights) this.updateFeatures(ply, color, sq, fl, fh);
+      this.nodes++;
+      const v = -this.evalInt(ply + 1, 3 - color, ol & ~fl, oh & ~fh, pl | fl | (sq < 32 ? 1 << sq : 0), ph | fh | (sq >= 32 ? 1 << (sq - 32) : 0));
+      if (v > best) { best = v; if (v >= beta) break; }
+    }
     return best;
   }
 

@@ -471,6 +471,27 @@ static int orderMoves(u64 P, u64 O, u64 moves, int color, int depth, int ply, in
   return n;
 }
 
+// One ply: every move's evaluation, best first to beat beta. No table and no
+// ordering, which cost more than they save this close to the leaves.
+static int search1(u64 P, u64 O, int color, int alpha, int beta, int ply, int passed) {
+  u64 moves = mobility(P, O);
+  if (!moves) {
+    if (passed) return finalScore(P, O);
+    nodes++;
+    return -search1(O, P, 3 - color, -beta, -alpha, ply, 1);
+  }
+  int best = -INF;
+  while (moves) {
+    int sq = lowBit(moves); moves &= moves - 1;
+    u64 f = flips(sq, P, O);
+    updateFeatures(ply, color, sq, f);
+    nodes++;
+    int v = -evalInt(ply + 1, 3 - color, O & ~f, P | f | (1ULL << sq));
+    if (v > best) { best = v; if (v >= beta) break; }
+  }
+  return best;
+}
+
 // Principal variation search to `depth` plies; switches to the exact solver
 // once the depth reaches the end of the game.
 static int pvs(u64 P, u64 O, int color, int depth, int alpha, int beta, int ply, int passed) {
@@ -480,6 +501,7 @@ static int pvs(u64 P, u64 O, int color, int depth, int alpha, int beta, int ply,
   const int empties = 64 - popcount(P | O);
   if (depth >= empties) return solveRoot(P, O, alpha, beta, empties);
   if (depth <= 0) return evalInt(ply, color, P, O);
+  if (depth == 1) return search1(P, O, color, alpha, beta, ply, passed);
 
   u64 moves = mobility(P, O);
   if (!moves) {
