@@ -48,7 +48,7 @@ const DEFAULTS = {
   coachFor: 'auto',
   speak: false,
   sound: true,
-  show: { moves: true, preview: true, danger: false, stable: false, frontier: false, book: false, feedback: true, hints: false, numbers: false },
+  show: { moves: true, preview: true, danger: true, stable: false, frontier: false, book: false, feedback: true, hints: false, numbers: false },
 };
 
 let settings = structuredClone(DEFAULTS);
