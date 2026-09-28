@@ -100,12 +100,15 @@ export class Engine {
         const [a, b, c, e] = child(m);
         let v;
         if (all || i === 0) {
-          // Aspiration around the last depth's score, widened on a miss.
+          // Aspiration around the last depth's score (for an exact solve,
+          // the deepest midgame score); on a miss, search again from the
+          // bound found to the end of the range.
           const prev = m.depth ? m.score : null;
-          if (prev !== null && !isExact) {
-            let lo = prev - 4, hi = prev + 4;
+          if (prev !== null) {
+            const w = isExact ? 2 : 4, lo = prev - w, hi = prev + w;
             v = -s.pvs(a, b, c, e, 3 - me, d - 1, -hi, -lo, 1, false);
-            if (!s.aborted && (v <= lo || v >= hi)) v = -s.pvs(a, b, c, e, 3 - me, d - 1, -127, 127, 1, false);
+            if (!s.aborted && v <= lo) v = -s.pvs(a, b, c, e, 3 - me, d - 1, -v - 1, 127, 1, false);
+            else if (!s.aborted && v >= hi) v = -s.pvs(a, b, c, e, 3 - me, d - 1, -127, -v + 1, 1, false);
           } else v = -s.pvs(a, b, c, e, 3 - me, d - 1, -127, 127, 1, false);
           m.bound = 0;
         } else {
