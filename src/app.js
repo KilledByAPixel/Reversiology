@@ -7,7 +7,7 @@ import { LEVELS, levelSearch, pickLevelMove } from './levels.js';
 import { annotate, gradeMove, gradesMove, GRADES, describeScore, hintList, openingOf, bookMoves } from './coach.js';
 import { nodeFacts, moveFacts } from './explain.js';
 import { COACH_FOR, resolveLevel, gradeLabel, levelGrade, verdict, describe, describeNote, positionNotes } from './wording.js';
-import { stableDiscs, frontierDiscs, dangerSquares } from './concepts.js';
+import { stableDiscs, frontierDiscs, dangerSquares, emptyRegions } from './concepts.js';
 import { BoardView } from './view.js';
 import { linkPoints, pointReadout, movePhrase, plainText, positionPhrase, resultPhrase } from './access.js';
 import { initAnnouncer, announce, speak, hush, setSpeech, repeatLast, speechAvailable } from './announce.js';
@@ -24,6 +24,7 @@ const TOGGLES = [
   ['danger', 'Danger squares', 'Squares next to an empty corner. Playing there often lets the opponent take the corner: red for X-squares (diagonal), orange for C-squares (along the edge).', 'D'],
   ['stable', 'Stable discs', 'A gold mark on discs that can never be flipped again.', 'T'],
   ['frontier', 'Frontier', 'Dashed rings on discs next to an empty square. Fewer frontier discs usually means fewer moves for your opponent.', 'F'],
+  ['parity', 'Regions', 'In the endgame, the empty regions and how many squares each has. Getting the last move in a region is an advantage, so odd regions (blue) are the ones to play in.', 'P'],
   ['book', 'Opening book', 'In the opening, mark the moves that follow a named opening line.', 'K'],
   ['feedback', 'Grade moves', 'After every move the coach says how good it was and what it would have played.', 'G'],
   ['hints', 'Best moves', 'Always show the coach\'s favourite moves with the disc result it expects. Press H for a one-off hint instead.', 'B'],
@@ -48,7 +49,7 @@ const DEFAULTS = {
   coachFor: 'auto',
   speak: false,
   sound: true,
-  show: { moves: true, preview: true, danger: true, stable: false, frontier: false, book: false, feedback: true, hints: false, numbers: false },
+  show: { moves: true, preview: true, danger: true, stable: false, frontier: false, parity: false, book: false, feedback: true, hints: false, numbers: false },
 };
 
 let settings = structuredClone(DEFAULTS);
@@ -509,6 +510,7 @@ function renderBoard() {
   if (sh.stable) s.stable = stableDiscs(b);
   if (sh.frontier) s.frontier = frontierDiscs(b);
   if (sh.danger && !over) s.danger = dangerSquares(b);
+  if (sh.parity && !over && b.empties <= 24) s.regions = emptyRegions(b);
   if (sh.numbers) s.numbers = moveNumbers(node);
   const hintsVisible = an && (hintOn || sh.hints) && !over && !aiToMove;
   if (hintsVisible) {
@@ -536,6 +538,10 @@ function renderPlayers() {
     const el = $(c === BLACK ? '#pBlack' : '#pWhite');
     el.querySelector('.pname').textContent = !settings.human ? colorName(c) : c === settings.human ? 'You' : aiLabel();
     el.querySelector('.count').textContent = b.count(c);
+    // With legal moves shown, each side's number of moves (mobility) too.
+    const mob = el.querySelector('.mob');
+    mob.hidden = !settings.show.moves || game.isOver();
+    if (!mob.hidden) { const n = b.legalMoves(c).length; mob.textContent = `${n} ${n === 1 ? 'move' : 'moves'}`; }
     el.classList.toggle('turn', !game.isOver() && b.toPlay === c && !resigned);
     el.classList.toggle('thinking', !!aiNode && aiNode.board.toPlay === c);
   }

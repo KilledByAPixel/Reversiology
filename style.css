@@ -68,6 +68,8 @@ kbd {
 }
 .player.turn { border-color: var(--accent); }
 .player .count { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 2ch; text-align: right; }
+.player .mob { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.player .mob::before { content: "·"; margin-right: 6px; }
 .player.thinking .pname::after { content: " …"; animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .2; } }
 .disc-icon { width: 16px; height: 16px; border-radius: 50%; display: inline-block; flex: none; }
@@ -83,6 +85,7 @@ kbd {
 }
 .board-svg { width: 100%; height: 100%; display: block; border-radius: 12px; box-shadow: 0 10px 30px rgba(10, 40, 20, .3); cursor: pointer; user-select: none; }
 .board-svg text { font-family: system-ui, sans-serif; }
+.region-num { font-size: 24px; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 .disc-num { text-anchor: middle; dominant-baseline: central; font-weight: 700; pointer-events: none; }
 .hint-main { text-anchor: middle; dominant-baseline: central; font-size: 30px; font-weight: 750; fill: #fff; pointer-events: none; }
 .hint-sub { text-anchor: middle; dominant-baseline: central; font-size: 21px; font-weight: 600; fill: #fff; opacity: .9; pointer-events: none; }

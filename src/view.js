@@ -135,6 +135,15 @@ export class BoardView {
         under += `<rect x="${X(p) - CELL / 2 + 8}" y="${Y(p) - CELL / 2 + 8}" width="${CELL - 16}" height="${CELL - 16}" rx="10" fill="${k}" fill-opacity="0.16" stroke="${k}" stroke-width="5" stroke-dasharray="${kind === 'x' ? 'none' : '10 7'}" stroke-opacity="0.85"/>`;
       }
     }
+    if (s.regions) {
+      // Empty regions: odd ones tinted blue, with each region's size on its first square.
+      for (const reg of s.regions) {
+        const odd = reg.length % 2 === 1;
+        for (const p of reg) under += `<rect x="${X(p) - CELL / 2 + 3}" y="${Y(p) - CELL / 2 + 3}" width="${CELL - 6}" height="${CELL - 6}" fill="${odd ? '#74c0fc' : '#ced4da'}" fill-opacity="${odd ? 0.28 : 0.14}"/>`;
+        const first = Math.min(...reg);
+        under += `<text x="${X(first) - 30}" y="${Y(first) - 28}" class="region-num" fill="${odd ? '#d0ebff' : '#dee2e6'}">${reg.length}</text>`;
+      }
+    }
     this.layers.under.innerHTML = under;
 
     // ---- discs
