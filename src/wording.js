@@ -151,7 +151,9 @@ export function describe(facts, ctx) {
         break;
       case 'wipeout': out.push(`Wipeout: ${w.subj(opp)} ${w.verb(opp, 'have', 'has')} no discs left!`); break;
       case 'threat':
-        if (!gives || !gives.corners.includes(f.move)) out.push(`${cap(w.subj(opp))} can now take the ${cornerName(f.move)} corner.`);
+        if (gives && gives.corners.includes(f.move)) break; // the givesCorner line says it
+        if (f.newly !== false) out.push(`${cap(w.subj(opp))} can now take the ${cornerName(f.move)} corner.`);
+        else if (flagged) out.push(`${cap(w.subj(opp))} can still take the ${cornerName(f.move)} corner: this move didn't stop it.`);
         break;
       case 'reply':
         if (S) out.push(`Best reply: ${sqName(f.move)}.`);

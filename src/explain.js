@@ -33,9 +33,10 @@ export function moveFacts({ before, after, move, mover, flipped = [], reads = {}
   if (!oppAfter.length && !after.isOver) facts.push({ type: 'forcesPass' });
   else if (oppAfter.length) facts.push({ type: 'mobility', theirs: oppAfter.length, theirsBefore: oppBefore.size, mine: myAfter });
 
-  // Discs flipped, and whether they sit inside or on the frontier.
+  // Discs flipped, and how many of them now sit on the frontier (the new
+  // disc itself nearly always does, so it isn't counted).
   const frontier = frontierDiscs(after, mover);
-  const exposed = flipped.filter(p => frontier.has(p)).length + (frontier.has(move) ? 1 : 0);
+  const exposed = flipped.filter(p => frontier.has(p)).length;
   facts.push({ type: 'flips', n: flipped.length, exposed, empties });
 
   // Stable discs gained.
@@ -59,7 +60,8 @@ export function moveFacts({ before, after, move, mover, flipped = [], reads = {}
   const an = reads.after;
   if (an && an.moves && an.moves.length && !an.pass) {
     const reply = an.moves[0];
-    if (CORNERS.includes(reply.move)) facts.push({ type: 'threat', move: reply.move, corner: true });
+    // newly: the move opened it; otherwise the corner was on offer already.
+    if (CORNERS.includes(reply.move)) facts.push({ type: 'threat', move: reply.move, corner: true, newly: !oppBefore.has(reply.move) });
     else facts.push({ type: 'reply', move: reply.move });
   }
   // A corner the opponent reaches within a few moves in the expected line.

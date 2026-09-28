@@ -13,7 +13,7 @@ import { linkPoints, pointReadout, movePhrase, plainText, positionPhrase, result
 import { initAnnouncer, announce, speak, hush, setSpeech, repeatLast, speechAvailable } from './announce.js';
 import { renderGraph } from './graph.js';
 import { discSound, playSound, setSoundEnabled, SOUNDS, ZZFXSound } from './sound.js';
-import { puzzleAt, nextPuzzle, puzzleCount, judge, prompt, THEME_HINTS, THEME_NAMES, DIFFICULTY } from './puzzle.js';
+import { puzzleAt, nextPuzzle, puzzleCount, solvedCount, judge, prompt, THEME_HINTS, THEME_NAMES, THEME_LESSONS, DIFFICULTY } from './puzzle.js';
 
 const $ = s => document.querySelector(s);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -550,7 +550,7 @@ function renderPlayers() {
   const b = game.board;
   for (const c of [BLACK, WHITE]) {
     const el = $(c === BLACK ? '#pBlack' : '#pWhite');
-    el.querySelector('.pname').textContent = !settings.human ? colorName(c) : c === settings.human ? 'You' : aiLabel();
+    el.querySelector('.pname').textContent = !settings.human ? colorName(c) : c === settings.human ? 'You' : puzzle ? colorName(c) : aiLabel();
     el.querySelector('.count').textContent = b.count(c);
     // With legal moves shown, each side's number of moves (mobility) too.
     const mob = el.querySelector('.mob');
@@ -783,6 +783,8 @@ function renderStatus() {
   if (h && !h.ok && !hoverByKey) { text = reasonText(h.reason); kind = 'bad'; }
   else if (flashMsg) { text = flashMsg.text; kind = flashMsg.kind; }
   else if (puzzle && puzzle.status === 'solving' && game.current === game.root) text = prompt(puzzle.p);
+  else if (puzzle && puzzle.status !== 'solving') text = puzzle.status === 'correct' ? 'Solved! Press "Next puzzle" for another, or keep exploring.' : 'Not quite. Try again, or ask for a hint.';
+  else if (puzzle) text = `${colorName(node.board.toPlay)} to play.`;
   else if (aiNode) text = aiBest ? 'Finding the best move…' : `${aiLabel()} is thinking…`;
   else if (resigned) text = `${colorName(resigned)} resigned.`;
   else if (game.isOver(node)) text = 'Neither player can move. The game is over.';
@@ -797,11 +799,14 @@ function renderStatus() {
 // ------------------------------------------------------------------ puzzles
 
 function enterPuzzles() {
+  let i = nextPuzzle(puzzleProgress.solved, puzzleProgress.difficulty, puzzleProgress.last);
+  if (i == null) { puzzleProgress.difficulty = 0; i = nextPuzzle(puzzleProgress.solved, 0, -1); }
+  if (i == null) { flash('No puzzles here yet.'); return; }
   cancelAI();
   stopCoach();
   puzzle = { saved: { game, human: settings.human, resigned } };
   resigned = 0;
-  startPuzzle(nextPuzzle(puzzleProgress.solved, puzzleProgress.difficulty, puzzleProgress.last));
+  startPuzzle(i);
 }
 
 function startPuzzle(i) {
@@ -868,7 +873,7 @@ function renderPuzzle() {
   el.hidden = !puzzle;
   if (!puzzle) return;
   const p = puzzle.p, pr = puzzleProgress;
-  const total = puzzleCount(pr.difficulty), solved = [...pr.solved].length;
+  const solved = solvedCount(pr.solved);
   const diffs = [0, 1, 2, 3].map(d => `<option value="${d}"${d === pr.difficulty ? ' selected' : ''}>${d ? DIFFICULTY[d] : 'All levels'}</option>`).join('');
   let body = '';
   if (puzzle.status === 'solving') {
@@ -881,6 +886,7 @@ function renderPuzzle() {
     body = `<p class="big ${ok ? 'good' : 'bad'}">${ok ? '✓ Correct!' : '✗ Not the best move.'}</p>` +
       (ok ? `<p>${THEME_NAMES[p.theme] || ''}${p.exact ? ' · worked out exactly' : ''}.</p>` : puzzle.shown ? `<p>The answer is ${answers}.</p>` : '') +
       (puzzle.lines.length ? `<ul class="explain">${puzzle.lines.map(t => `<li>${t}</li>`).join('')}</ul>` : '') +
+      (ok || puzzle.shown ? `<p class="lesson">${THEME_LESSONS[p.theme] || THEME_LESSONS.best}</p>` : '') +
       (!ok && puzzle.shown && puzzle.reveal.length ? `<ul class="explain">${puzzle.reveal.map(t => `<li>${t}</li>`).join('')}</ul>` : '') +
       (!ok && !puzzle.shown && !puzzle.lines.length ? '<p class="muted">There\'s a better move here. Try again, or ask for a hint.</p>' : '') +
       `<div class="fb-actions">${ok ? '' : `<button data-act="retry">Try again</button>${puzzle.hint ? '' : '<button data-act="hint">Hint</button>'}${puzzle.shown ? '' : '<button data-act="answer">Show answer</button>'}`}<button data-act="next" class="primary">Next puzzle</button></div>` +

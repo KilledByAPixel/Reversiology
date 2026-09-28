@@ -262,5 +262,6 @@ menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 1
 .puzzle-panel .big.bad { color: var(--warn); }
 .puzzle-panel p { margin: 6px 0; }
 .hint-line { background: color-mix(in srgb, #e2c35a 22%, transparent); padding: 6px 9px; border-radius: 8px; font-size: 14px; }
+.lesson { background: color-mix(in srgb, #7b5ea7 12%, transparent); border-left: 3px solid #7b5ea7; padding: 6px 9px; border-radius: 6px; font-size: 14px; }
 .pz-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; flex-wrap: wrap; }
 .pz-foot select { padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--btn); }
