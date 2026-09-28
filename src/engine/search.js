@@ -36,6 +36,15 @@ const SQUARE_VALUE = new Int8Array([
   18, -6, 8, 6, 6, 8, -6, 18,
 ]);
 
+// ProbCut (Buro's multi-ProbCut as Edax does it): a shallow search predicts
+// the deep one, within an error that grows with the depths and the empties.
+// These error parameters are Edax's, fitted for the same evaluation.
+const PC_A = -0.10026799, PC_B = 0.31027733, PC_C = -0.57772603, PC_a = 0.07585621, PC_b = 1.16492647, PC_c = 5.4171698;
+function evalSigma(empties, depth, pcDepth) {
+  const s = PC_A * empties + PC_B * depth + PC_C * pcDepth;
+  return PC_a * s * s + PC_b * s + PC_c;
+}
+
 // Final score with empties to the winner.
 function finalScore(pl, ph, ol, oh) {
   const p = popcount(pl) + popcount(ph), o = popcount(ol) + popcount(oh), e = 64 - p - o;
@@ -211,6 +220,29 @@ export class Search {
         if (lo === hi) return lo;
         if (lo > alpha) alpha = lo;
         if (hi < beta) beta = hi;
+      }
+    }
+
+    // ProbCut, at null-window nodes: a shallow search far outside the window
+    // decides without the deep one.
+    if (this.pcT && beta === alpha + 1 && depth >= 4 && this.pcLevel < 2 && this.weights) {
+      const t = this.pcT, pd = 2 * Math.floor(depth / 4) + (depth & 1);
+      const err = Math.floor(t * evalSigma(empties, depth, pd) + 0.5);
+      const ev = this.evalInt(ply, color, pl, ph, ol, oh);
+      const evErr = Math.floor(t * 0.5 * (evalSigma(empties, depth, 0) + evalSigma(empties, depth, pd)) + 0.5);
+      if (ev >= beta - evErr && beta + err < 64) {
+        this.pcLevel++;
+        const v = this.pvs(pl, ph, ol, oh, color, pd, beta + err - 1, beta + err, ply, passed);
+        this.pcLevel--;
+        if (this.aborted) return 0;
+        if (v >= beta + err) return beta;
+      }
+      if (ev < alpha + evErr && alpha - err > -64) {
+        this.pcLevel++;
+        const v = this.pvs(pl, ph, ol, oh, color, pd, alpha - err, alpha - err + 1, ply, passed);
+        this.pcLevel--;
+        if (this.aborted) return 0;
+        if (v <= alpha - err) return alpha;
       }
     }
 
@@ -455,4 +487,6 @@ export class Search {
 }
 
 Search.prototype.age = 1;
+Search.prototype.pcT = 0;      // ProbCut confidence (0: off): 1.1 prunes most, 2.6 rarely errs
+Search.prototype.pcLevel = 0;
 export { finalScore, INF };

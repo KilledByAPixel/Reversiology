@@ -7,11 +7,11 @@ const sign = c => c === BLACK ? 1 : -1;
 
 // Chance that the side with an expected lead of `score` discs wins, given how
 // much of the game is left. Exact reads are certain. In the midgame a lead
-// counts for less the more squares are empty (tools/winrate.js fitted the
-// spread from the engine's self-play).
+// counts for less the more squares are empty. tools/winrate.js fitted the
+// spread to games between River-level players, noisy the way real games are.
 export function winChance(score, empties, exact) {
   if (exact) return score > 0 ? 1 : score < 0 ? 0 : 0.5;
-  const spread = 2 + empties * 0.2;
+  const spread = 3 + empties * 0.32;
   return 1 / (1 + Math.exp(-score / spread));
 }
 

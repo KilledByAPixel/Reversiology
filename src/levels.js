@@ -14,13 +14,13 @@ export const LEVELS = [
   { name: 'Stream', blurb: 'Good instincts. Punishes obvious mistakes.', depth: 2, exact: 8, temp: 1.6, miss: 0.06 },
   { name: 'River', blurb: 'Reads a few moves ahead and plays the endgame well.', depth: 3, exact: 10, temp: 1, miss: 0.03 },
   { name: 'Mountain', blurb: 'Strong. Plays the last 12 moves perfectly.', depth: 4, exact: 12, temp: 0.5, miss: 0 },
-  { name: 'Dragon', blurb: 'Very strong, and still quick.', depth: 6, exact: 14, temp: 0, miss: 0 },
-  { name: 'Phoenix', blurb: 'Extra hard: reads 10 moves ahead and plays the last 20 perfectly.', depth: 10, exact: 20, temp: 0, miss: 0, maxTime: 10000 },
+  { name: 'Dragon', blurb: 'Very strong, and still quick.', depth: 8, exact: 16, temp: 0, miss: 0, probcut: 1.5 },
+  { name: 'Phoenix', blurb: 'Extra hard: reads 16 moves ahead and plays the last 20 perfectly.', depth: 16, exact: 20, temp: 0, miss: 0, probcut: 1.5, maxTime: 10000 },
 ];
 
 // The engine options for a level's move.
 export const levelSearch = level => ({
-  depth: level.depth, exact: level.exact, all: level.temp > 0,
+  depth: level.depth, exact: level.exact, all: level.temp > 0, probcut: level.probcut || 0,
   maxTime: level.maxTime || 15000, minDepth: Math.min(level.depth, 4),
 });
 

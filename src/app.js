@@ -30,11 +30,12 @@ const TOGGLES = [
   ['numbers', 'Move numbers', 'Show the order the discs were played in.', 'N'],
 ];
 
-// Coach depth: plies read in the midgame, empties solved exactly, time cap.
+// Coach depth: plies read in the midgame (with ProbCut at a confidence that
+// rarely changes a score), empties solved exactly, time cap.
 const COACH_DEPTHS = {
-  quick: { depth: 6, exact: 14, maxTime: 4000 },
-  normal: { depth: 8, exact: 16, maxTime: 8000 },
-  deep: { depth: 10, exact: 18, maxTime: 20000 },
+  quick: { depth: 8, exact: 14, probcut: 2, maxTime: 4000 },
+  normal: { depth: 10, exact: 16, probcut: 2, maxTime: 8000 },
+  deep: { depth: 12, exact: 18, probcut: 2, maxTime: 20000 },
 };
 
 const DEFAULTS = {

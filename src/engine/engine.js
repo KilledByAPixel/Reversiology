@@ -39,9 +39,12 @@ export class Engine {
   //   maxTime   ms; the deepest finished depth stands when time runs out
   //   all       score every move exactly (the coach) instead of just finding the best
   //   minDepth  depth to finish even past maxTime
+  //   probcut   ProbCut confidence for the midgame (0: a full-width search)
   // Yields { done, ...result } after each root move searched.
-  *analyze(pos, { depth = 8, exact = 14, maxTime = Infinity, all = true, minDepth = 1 } = {}) {
+  *analyze(pos, { depth = 8, exact = 14, maxTime = Infinity, all = true, minDepth = 1, probcut = 0 } = {}) {
     const s = this.search;
+    s.pcT = probcut;
+    s.pcLevel = 0;
     const t0 = Date.now();
     s.nodes = 0;
     s.aborted = false;
@@ -58,7 +61,7 @@ export class Engine {
       const over = !(R.lo | R.hi);
       const score = over ? finalScore(pl0, ph0, ol0, oh0) : null;
       if (over) return { ...base, done: true, over: true, exact: true, score, pass: false };
-      const sub = this.analyze({ ...pos, toPlay: 3 - me }, { depth, exact, maxTime, all: false, minDepth });
+      const sub = this.analyze({ ...pos, toPlay: 3 - me }, { depth, exact, maxTime, all: false, minDepth, probcut });
       let r;
       for (;;) { const x = sub.next(); if (x.done) { r = x.value; break; } yield { ...base, pass: true, score: -x.value.score }; }
       return { ...base, done: true, pass: true, score: -r.score, depth: r.depth, exact: r.exact, nodes: r.nodes, pv: [-1, ...(r.moves[0] ? [r.moves[0].move, ...r.moves[0].pv] : [])] };
