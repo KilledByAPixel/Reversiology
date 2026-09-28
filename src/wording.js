@@ -42,6 +42,9 @@ const discs = n => `${n} ${Math.abs(n) === 1 ? 'disc' : 'discs'}`;
 // "wins by 4", "loses by 2", "draws".
 const outcome = m => m > 0 ? `wins by ${m}` : m < 0 ? `loses by ${-m}` : 'draws';
 
+// Whether verdict() states the exact result (so the explanation needn't).
+export const verdictSaysResult = (g, level, shown) => !!g && g.exact && (g.grade === 'best' ? level !== 'beginner' : shown.flagged && level !== 'beginner');
+
 // The sentence after the grade: how the move compares with the coach's choice.
 export function verdict(g, level, shown) {
   if (g.grade === 'best') {
@@ -51,7 +54,9 @@ export function verdict(g, level, shown) {
   }
   const best = `<b>${sqName(g.bestMove)}</b>`;
   if (!shown.flagged) {
-    return g.ptLoss <= 1 ? `About as good as the coach's choice, ${best}.` : `A fine move. The coach slightly preferred ${best}.`;
+    if (g.ptLoss <= 1) return `About as good as the coach's choice, ${best}.`;
+    if (g.ptLoss <= 2) return `A fine move. The coach slightly preferred ${best}.`;
+    return level === 'beginner' ? `OK, but the coach liked ${best} better.` : `OK, but ${best} was about ${discs(Math.round(g.ptLoss))} better.`;
   }
   if (g.exact && level !== 'beginner') return `With perfect play, ${best} ${outcome(g.bestResult)}; this move ${outcome(g.result)}.`;
   if (level === 'beginner') return g.exact && g.bestResult > 0 && g.result <= 0 ? `The coach would have played ${best}, which wins.` : `The coach would have played ${best}.`;
@@ -125,19 +130,22 @@ export function describe(facts, ctx) {
         break;
       }
       case 'flips': {
-        if (f.n >= 6 && f.empties > 20 && flagged) {
+        const greed = facts.some(x => x.type === 'vsBest' && x.why === 'greed'); // says it better, with the comparison
+        if (f.n >= 6 && f.empties > 20 && flagged && !greed) {
           out.push(B ? `Flips ${f.n} discs. Having more discs early isn't an advantage: every disc next to an empty square gives your opponent something to flip.`
             : `Flips ${f.n} discs, ${f.exposed} of them on the frontier: more targets and more moves for ${w.subj(opp)}.`);
-        } else if (f.n <= 2 && f.exposed === 0 && good && f.empties > 12 && !S) {
+        } else if (f.n <= 3 && f.exposed === 0 && good && f.empties > 12 && !S) {
           out.push(B ? 'A quiet move: it flips only discs in the middle of your group.' : `A quiet move: it flips only inside discs and opens nothing new for ${w.subj(opp)}.`);
         }
         break;
       }
       case 'stable':
+        // Near the end almost everything becomes stable: only a big gain is news.
+        if (facts.some(x => x.type === 'flips' && x.empties < 10)) break;
         out.push(B ? `Makes ${f.gain} discs safe for good: they can never be flipped.` : S ? `+${f.gain} stable discs (${f.total}).` : `Gains ${f.gain} stable discs, which can never be flipped.`);
         break;
       case 'parity':
-        if (B) break;
+        if (B || f.size < 3) break;
         if (f.odd && good && f.size <= 5) out.push(S ? `Parity: odd region (${f.size}).` : `Plays into a region with an odd number of empty squares (${f.size}), so ${w.subj(mover)} can expect the last move there.`);
         else if (!f.odd && flagged) out.push(S ? `Parity: even region (${f.size}).` : `Plays into an even region (${f.size} empties): ${w.subj(opp)} is likely to get the last move there.`);
         break;
@@ -147,6 +155,10 @@ export function describe(facts, ctx) {
         break;
       case 'reply':
         if (S) out.push(`Best reply: ${sqName(f.move)}.`);
+        // A mistake with no simpler reason: at least name the punishment.
+        else if (flagged && !ctx.intent && !facts.some(x => x.type === 'vsBest' || x.type === 'givesCorner' || x.type === 'cornerSoon' || x.type === 'threat')) {
+          out.push(`${cap(w.poss(opp))} strongest answer is <b>${sqName(f.move)}</b>.`);
+        }
         break;
       case 'vsBest': {
         if (!flagged) break; // only a mistake needs the comparison
@@ -157,6 +169,8 @@ export function describe(facts, ctx) {
         else if (f.why === 'mobility') out.push(B ? `After ${b}, ${w.subj(opp)} would have had fewer moves to choose from (${f.theirs} instead of ${f.mine}). Fewer choices often forces bad moves later.`
           : S ? `${b}: ${colorName(opp)} mobility ${f.theirs} vs ${f.mine}.` : `${b} leaves ${w.subj(opp)} ${f.theirs} moves instead of ${f.mine}: keeping ${w.poss(opp)} choices low is the key idea in the midgame.`);
         else if (f.why === 'frontier') { if (!B) out.push(S ? `${b}: frontier ${f.theirs} vs ${f.mine}.` : `${b} keeps ${w.poss(mover)} discs more tucked in: ${f.theirs} frontier discs instead of ${f.mine}.`); }
+        else if (f.why === 'greed') out.push(B ? `This flips ${f.mine} discs; ${b} flips only ${f.theirs}. Early in the game, flipping fewer discs is usually better: it leaves your opponent fewer moves.`
+          : S ? `Flips ${f.mine}; ${b} flips ${f.theirs}.` : `Flips ${f.mine} discs where ${b} flips ${f.theirs}: in the opening and midgame, fewer flips usually means fewer moves for ${w.subj(opp)}.`);
         else if (f.why === 'ownMobility') { if (!B) out.push(S ? `${b}: own mobility ${f.theirs} vs ${f.mine}.` : `${b} keeps more options for ${w.subj(mover)}: ${f.theirs} possible moves next time instead of ${f.mine}.`); }
         else if (f.why === 'stable') out.push(B ? `${b} would have made ${f.gain} more discs safe for good.` : `${b} gains ${f.gain} more stable discs.`);
         else if (f.why === 'parity') { if (!B) out.push(S ? `${b}: odd region (${f.size}).` : `${b} plays into an odd region (${f.size} empties), keeping the last move there for ${w.subj(mover)}.`); }
@@ -168,6 +182,9 @@ export function describe(facts, ctx) {
         out.push(B ? `This gives ${w.subj(opp)} a way to take the ${cornerName(f.corner)} corner a few moves from now.` : `${cap(w.subj(opp))} can now work towards the ${cornerName(f.corner)} corner (the coach sees it ${f.plies} moves ahead).`);
         break;
       case 'exact': {
+        // The verdict already gave the result (the best move, or a mistake by
+        // an improving or strong player).
+        if (ctx.resultSaid) break;
         const [m, o] = f.discs;
         if (B) out.push(f.score > 0 ? `From here ${w.subj(mover)} can win for sure with perfect play.` : f.score < 0 ? `From here ${w.subj(opp)} can win with perfect play.` : 'With perfect play this ends in a draw.');
         else if (!f.score) out.push('With perfect play from here, it\'s a draw.');
@@ -179,7 +196,7 @@ export function describe(facts, ctx) {
       }
     }
   }
-  if (flagged && !out.length && !ctx.intent) out.push('The reason is deeper than a single move: press <b>Show</b> to see how the coach expects play to go.');
+  if (flagged && !out.some(l => !/strongest answer/.test(l)) && !ctx.intent) out.push('The full reason is deeper than a single move: press <b>Show</b> to see how the coach expects play to go.');
   return out;
 }
 

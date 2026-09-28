@@ -104,6 +104,8 @@ export function compareFacts(before, move, best, mover) {
   // move that leaves you short of moves is as bad as one that helps them.
   const myMoves = r => r.b.legalMoves(mover).length;
   if (myMoves(theirs) >= myMoves(mine) + 3 && before.empties > 16) out.push({ type: 'vsBest', why: 'ownMobility', best, mine: myMoves(mine), theirs: myMoves(theirs) });
+  // Greed: flipping more than the better move, early on.
+  if (before.empties > 20 && mine.f.length >= theirs.f.length + 2) out.push({ type: 'vsBest', why: 'greed', best, mine: mine.f.length, theirs: theirs.f.length });
   const st = r => countOf(stableDiscs(r.b), r.b, mover);
   if (st(theirs) >= st(mine) + 3) out.push({ type: 'vsBest', why: 'stable', best, gain: st(theirs) - st(mine) });
   if (before.empties <= 18) {

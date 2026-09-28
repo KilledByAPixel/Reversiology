@@ -146,7 +146,20 @@ export class BoardView {
     }
     this.layers.under.innerHTML = under;
 
-    // ---- discs
+    // ---- discs: rebuilt only when the position changes, so redraws for the
+    // coach or the pointer don't restart (or cut short) a flip in progress.
+    const discKey = `${s.nodeId}:${b.color.join('')}`;
+    if (discKey !== this.discKey) {
+      this.discKey = discKey;
+      this.layers.discs.innerHTML = this.discsSVG(s, animate);
+    }
+
+    // ---- marks on and between discs
+    this.renderMarks(s);
+  }
+
+  discsSVG(s, animate) {
+    const b = s.board;
     let discs = '';
     const flipped = animate && s.flipped ? new Set(s.flipped) : null;
     for (let p = 0; p < 64; p++) {
@@ -162,9 +175,12 @@ export class BoardView {
       const cls = animate && p === s.lastMove ? 'disc fresh' : 'disc';
       discs += `<circle class="${cls}" cx="${X(p)}" cy="${Y(p)}" r="${R}" fill="${disc(c)}"/>`;
     }
-    this.layers.discs.innerHTML = discs;
+    return discs;
+  }
 
-    // ---- marks on and between discs
+  // Everything drawn over the discs: marks, hints, the hover preview.
+  renderMarks(s) {
+    const b = s.board;
     let marks = '';
     if (s.moves) {
       for (const p of s.moves) marks += `<circle cx="${X(p)}" cy="${Y(p)}" r="11" fill="${b.toPlay === BLACK ? '#111' : '#f4f4f4'}" fill-opacity="0.45"/>`;

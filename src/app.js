@@ -6,7 +6,7 @@ import { Engine, EnginePool } from './engine-client.js';
 import { LEVELS, levelSearch, pickLevelMove } from './levels.js';
 import { annotate, gradeMove, gradesMove, GRADES, describeScore, hintList, openingOf, bookMoves } from './coach.js';
 import { nodeFacts, moveFacts } from './explain.js';
-import { COACH_FOR, resolveLevel, gradeLabel, levelGrade, verdict, describe, describeNote, positionNotes } from './wording.js';
+import { COACH_FOR, resolveLevel, gradeLabel, levelGrade, verdict, verdictSaysResult, describe, describeNote, positionNotes } from './wording.js';
 import { stableDiscs, frontierDiscs, dangerSquares, emptyRegions } from './concepts.js';
 import { BoardView } from './view.js';
 import { linkPoints, pointReadout, movePhrase, plainText, positionPhrase, resultPhrase } from './access.js';
@@ -390,8 +390,8 @@ function announceGrade(node) {
   if (node.announced || !node.grade || !settings.show.feedback || (node !== cur && node !== cur.parent)) return;
   if (!node.analysisDone && !game.isOver(node)) return;
   node.announced = true;
-  const level = coachLevel(), facts = factsFor(node), shown = levelGrade(node.grade, level, facts);
-  const lines = describe(facts, { level, mover: node.color, you: settings.human, shown });
+  const level = coachLevel(), facts = factsFor(node).filter(f => f.type !== 'opening'), shown = levelGrade(node.grade, level, facts);
+  const lines = describe(facts, { level, mover: node.color, you: settings.human, shown, resultSaid: verdictSaysResult(node.grade, level, shown) });
   announce(plainText(`Coach: ${shown.label}. ${verdict(node.grade, level, shown)} ${lines.join(' ')}`));
 }
 
@@ -690,6 +690,7 @@ function moveEntry(node) {
   else if (!g) html = head('<span class="pill pending">grading…</span>');
   else {
     ctx.shown = levelGrade(g, level, facts);
+    ctx.resultSaid = verdictSaysResult(g, level, ctx.shown);
     html = head(`<span class="pill" style="--pill:${ctx.shown.color}">${ctx.shown.label}</span>`) + `<p>${verdict(g, level, ctx.shown)}</p>`;
     if (g.grade !== 'best' && g.bestMove !== PASS && g.ptLoss > 0) {
       html += `<div class="fb-actions"><button data-act="show" data-id="${node.id}" data-pt="${g.bestMove}">Show ${sqName(g.bestMove)}</button>` +

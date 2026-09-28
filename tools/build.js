@@ -149,13 +149,10 @@ const files = new Map(); // dist name -> Buffer
 files.set('app.js', Buffer.from(bundle(path.join(src, 'app.js'), {
   'engine-client.js': {
     "new Worker(new URL('./engine-worker.js', import.meta.url), { type: 'module' })": "new Worker('engine-worker.js')",
+    "new URL('../weights/eval.bin.gz', import.meta.url)": "new URL('weights/eval.bin.gz', document.baseURI)",
   },
 })));
-files.set('engine-worker.js', Buffer.from(bundle(path.join(src, 'engine-worker.js'), {
-  'engine-worker.js': {
-    "new URL('../weights/eval.bin.gz', import.meta.url)": "new URL('weights/eval.bin.gz', self.location.href)",
-  },
-})));
+files.set('engine-worker.js', Buffer.from(bundle(path.join(src, 'engine-worker.js'))));
 files.set('weights/eval.bin.gz', fs.readFileSync(path.join(root, 'weights', 'eval.bin.gz')));
 if (fs.existsSync(path.join(root, 'social.png'))) files.set('social.png', fs.readFileSync(path.join(root, 'social.png')));
 

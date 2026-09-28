@@ -20,6 +20,10 @@ and shows you what it would have played.
 - **Exact endgames.** In the last 14 to 18 moves (depending on the coach
   depth) the coach plays the game out perfectly: it tells you who wins with
   best play, and by how many discs each move wins or loses.
+- **Puzzles.** Positions from real games where one move is clearly best,
+  checked by a deep read or an exact solve: take the corner, force a pass,
+  find the quiet move, win the endgame on parity. Easy, medium and hard, with
+  a hint for each and an explanation of the answer.
 - **Openings.** The coach names the opening you're in (Tiger, Rose, Buffalo,
   and 70 more) and can mark the book moves that continue a named line.
 - **See the board like a stronger player.** Overlays for legal moves, a flip
@@ -51,8 +55,12 @@ The levels below Dragon are held back on purpose: they read fewer moves ahead,
 choose among their options more loosely, and now and then make a typical
 beginner's move (grabbing the most discs). In self-play each level beat the
 one below it in 7 to 9 games out of 10, from Pebble, which plays almost at
-random, up to Mountain. Dragon and Phoenix read 8 and 16 moves ahead and play
-the last 16 and 20 moves perfectly; Phoenix is far beyond any human player.
+random, up to Dragon. Phoenix won every game against Dragon.
+
+Against Edax as an outside yardstick: Mountain beat Edax at level 2 in 18
+games of 20, and Dragon beat Edax at level 6 in 12 of 20. Dragon reads 6 moves
+ahead and plays the last 14 perfectly; Phoenix reads 16 ahead, plays the last
+20 perfectly, and is far beyond any human player.
 
 ## Development
 
@@ -64,8 +72,9 @@ No build step: open `index.html` through any static web server
   as itch.io, with a zip ready to upload.
 - `tools/levels.js` plays levels against each other, `tools/edax-match.js`
   plays against Edax, `tools/ffo.js` solves the FFO endgame test positions,
-  `tools/bench.js` measures search speed and `tools/winrate.js` fits the win
-  chance shown by the coach.
+  `tools/bench.js` measures search speed, `tools/winrate.js` fits the win
+  chance shown by the coach, `tools/explain-demo.js` prints everything the
+  coach says about a game, and `tools/gen-puzzles.js` finds and checks puzzles.
 - `tools/convert-edax.js` converts Edax's `eval.dat` into `weights/eval.bin.gz`,
   and `tools/gen-openings.js` builds `src/openings.js` from Egaroucid's list.
 

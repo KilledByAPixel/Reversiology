@@ -1,13 +1,24 @@
 // Web Worker around the engine. One job at a time; a new job or 'stop'
 // pre-empts the current one between steps (each step searches one root move
 // at one depth). Progress is streamed so the coach can show early results.
+// The page sends the evaluation weights (fetched once for all workers) first.
 import { Engine, positionFromColors } from './engine/engine.js';
-import { fetchWeights } from './engine/weights.js';
+import { unpackWeights, gunzip } from './engine/weights.js';
 
 let engine = null, job = null, loadError = null;
-const ready = fetchWeights(new URL('../weights/eval.bin.gz', import.meta.url).href)
-  .then(w => { engine = new Engine(w, { ttBits: 18 }); })
-  .catch(e => { loadError = e.message || String(e); engine = new Engine(null, { ttBits: 18 }); });
+let resolveReady;
+const ready = new Promise(r => { resolveReady = r; });
+
+async function setWeights(bytes, error) {
+  try {
+    if (error) throw new Error(error);
+    engine = new Engine(unpackWeights(await gunzip(new Uint8Array(bytes))), { ttBits: 18 });
+  } catch (e) {
+    loadError = e.message || String(e);
+    engine = new Engine(null, { ttBits: 18 });
+  }
+  resolveReady();
+}
 
 const channel = new MessageChannel();
 channel.port1.onmessage = step;
@@ -16,13 +27,14 @@ const yieldThen = () => { if (!stepQueued) { stepQueued = true; channel.port2.po
 
 self.onmessage = async e => {
   const msg = e.data;
+  if (msg.type === 'weights') { setWeights(msg.bytes, msg.error); return; }
   if (msg.type === 'stop') { job = null; return; }
   if (msg.type === 'search') {
     job = { id: msg.id, msg, gen: null, lastReport: 0, started: performance.now() };
     const mine = job;
     await ready;
     if (job !== mine) return;
-    if (loadError) postMessage({ type: 'warning', message: loadError });
+    if (loadError) { postMessage({ type: 'warning', message: loadError }); loadError = null; }
     const { color, toPlay, opts } = msg;
     mine.gen = engine.analyze(positionFromColors(color, toPlay), opts);
     yieldThen();
