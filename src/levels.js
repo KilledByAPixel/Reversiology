@@ -10,12 +10,12 @@ export const LEVELS = [
   { name: 'Pebble', blurb: 'Just learned the rules. Grabs discs wherever it can.', depth: 1, exact: 0, temp: 8, miss: 0.6 },
   { name: 'Seedling', blurb: 'Plays sensible-looking moves, but misses a lot.', depth: 1, exact: 4, temp: 5, miss: 0.35 },
   { name: 'Sprout', blurb: 'Knows corners matter. Still gives some away.', depth: 2, exact: 6, temp: 3, miss: 0.18 },
-  { name: 'Reed', blurb: 'Plays safe moves, punishes obvious mistakes.', depth: 2, exact: 8, temp: 2, miss: 0.07 },
-  { name: 'Stream', blurb: 'Good instincts, doesn\'t read far ahead.', depth: 3, exact: 10, temp: 1, miss: 0.02 },
-  { name: 'River', blurb: 'Reads a few moves ahead. Plays the endgame well.', depth: 4, exact: 12, temp: 0.5, miss: 0 },
-  { name: 'Mountain', blurb: 'Strong. Plays the last 14 moves perfectly.', depth: 6, exact: 14, temp: 0, miss: 0 },
-  { name: 'Dragon', blurb: 'Very strong, and still quick.', depth: 9, exact: 18, temp: 0, miss: 0 },
-  { name: 'Phoenix', blurb: 'Extra hard: thinks longer and plays the last 20 moves perfectly.', depth: 12, exact: 20, temp: 0, miss: 0, maxTime: 10000 },
+  { name: 'Reed', blurb: 'Plays mostly safe moves, but loosely.', depth: 2, exact: 8, temp: 2.5, miss: 0.12 },
+  { name: 'Stream', blurb: 'Good instincts. Punishes obvious mistakes.', depth: 2, exact: 8, temp: 1.6, miss: 0.06 },
+  { name: 'River', blurb: 'Reads a few moves ahead and plays the endgame well.', depth: 3, exact: 10, temp: 1, miss: 0.03 },
+  { name: 'Mountain', blurb: 'Strong. Plays the last 12 moves perfectly.', depth: 4, exact: 12, temp: 0.5, miss: 0 },
+  { name: 'Dragon', blurb: 'Very strong, and still quick.', depth: 6, exact: 14, temp: 0, miss: 0 },
+  { name: 'Phoenix', blurb: 'Extra hard: reads 10 moves ahead and plays the last 20 perfectly.', depth: 10, exact: 20, temp: 0, miss: 0, maxTime: 10000 },
 ];
 
 // The engine options for a level's move.
