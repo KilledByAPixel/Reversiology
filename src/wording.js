@@ -204,6 +204,12 @@ export function positionNotes(board, names) {
   if (!moves.length) { out.push({ kind: 'warn', text: `${names.who(me)} ${names.who(me) === 'You' ? 'have' : 'has'} no legal move and must pass.` }); return out; }
   const corners = moves.filter(p => CORNERS.includes(p));
   if (corners.length) out.push({ kind: 'chance', text: `${names.who(me)} can take the ${corners.map(sqName).join(' or ')} corner.` });
+  // Corners the opponent could take if it were their move: a threat to answer.
+  const theirs = board.legalMoves(3 - me).filter(p => CORNERS.includes(p) && !corners.includes(p));
+  if (theirs.length) {
+    const them = names.who(3 - me), you = names.who(me) === 'You';
+    out.push({ kind: 'warn', text: `${them} ${them === 'You' ? 'threaten' : 'threatens'} to take the ${theirs.map(sqName).join(' and ')} corner${theirs.length > 1 ? 's' : ''}${you ? '. Can you stop it, or make it cost them?' : '.'}` });
+  }
   if (moves.length === 1) out.push({ kind: 'warn', text: `Only one legal move: ${sqName(moves[0])}.` });
   return out;
 }

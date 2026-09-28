@@ -77,8 +77,10 @@ const COACHES = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 2
 const PUZZLE_TOTAL = puzzleCount();
 const opponent = new Engine('opponent');
 const coach = new EnginePool('coach', COACHES);
-// Answers "what would the opponent play if it were their move?"
-const scout = new Engine('scout');
+// Answers "what would the opponent play if it were their move?" Started on
+// first use: each worker holds its own copy of the evaluation.
+let scoutEngine = null;
+const scout = { search: (...a) => (scoutEngine ||= new Engine('scout')).search(...a), cancel: () => scoutEngine && scoutEngine.cancel() };
 Engine.onError = (name, msg) => flash(`The ${name} engine stopped working (${msg}). Reload the page; if it keeps happening, try a current Chrome, Firefox or Safari.`, 'bad');
 Engine.onWarning = (name, msg) => { if (name === 'opponent') flash(`The evaluation couldn't load (${msg}), so the AI and coach are much weaker. Reload to try again.`, 'bad'); };
 const view = new BoardView($('#board'), { onClick, onHover, onCursor });
@@ -293,8 +295,8 @@ async function aiMove(force = false, best = false) {
 
 const isGraded = node => gradesMove(node, settings.human, settings.gradeAI);
 
-// The coach's to-do list: the position on the board, the one before it (its
-// read grades the move just played), then outwards along the game.
+// The coach's to-do list: the positions whose reads grade the moves on
+// screen, the position on the board, then outwards along the game.
 function coachQueue(max) {
   const cur = game.current, out = [];
   const want = n => {
@@ -302,8 +304,10 @@ function coachQueue(max) {
     if (game.isOver(n)) { finalRead(n); return; }
     out.push(n);
   };
+  // First the reads that grade the last two moves (the positions before
+  // them), then the position on the board.
+  for (const n of [cur, cur.parent]) if (n && n.parent && isGraded(n)) want(n.parent);
   want(cur);
-  if (cur.parent && isGraded(cur)) want(cur.parent);
   const line = game.line(), idx = line.indexOf(cur);
   // Reviewing: the next move's grade.
   if (line[idx + 1] && isGraded(line[idx + 1])) want(cur);
