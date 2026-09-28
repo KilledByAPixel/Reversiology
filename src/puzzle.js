@@ -9,9 +9,9 @@ export const DIFFICULTY = ['', 'Easy', 'Medium', 'Hard'];
 
 // A puzzle as an object: { id, board (Board), answers (squares), theme, difficulty, gap, exact }.
 export function puzzleAt(i) {
-  const [board, side, answers, theme, difficulty, gap, exact] = PUZZLES[i];
+  const [board, side, answers, theme, difficulty, gap, exact, result] = PUZZLES[i];
   const b = Board.fromString(board, side === 'O' ? WHITE : BLACK);
-  return { index: i, id: `${board}${side}`, board: b, answers: answers.split(' ').map(parseSq), theme, difficulty, gap, exact: !!exact };
+  return { index: i, id: `${board}${side}`, board: b, answers: answers.split(' ').map(parseSq), theme, difficulty, gap, exact: !!exact, result: exact ? result : null };
 }
 
 export const puzzleCount = (difficulty = 0) => PUZZLES.filter(p => !difficulty || p[4] === difficulty).length;
@@ -67,6 +67,12 @@ export const THEME_NAMES = {
 export function prompt(p, you = null) {
   const who = p.board.toPlay === BLACK ? 'Black' : 'White';
   if (p.theme === 'wipeout') return `${who} to play and wipe out every ${p.board.toPlay === BLACK ? 'white' : 'black'} disc.`;
+  // Exact puzzles know the result with perfect play.
+  if (p.result != null) {
+    if (p.result > 0) return `${who} to play and win.`;
+    if (p.result === 0) return `${who} to play and draw.`;
+    return `${who} to play and lose by as little as possible.`;
+  }
   return `${who} to play. Find the best move.`;
 }
 

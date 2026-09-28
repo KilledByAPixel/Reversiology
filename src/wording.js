@@ -87,6 +87,12 @@ export function describe(facts, ctx) {
   const good = !!(ctx.shown && !ctx.shown.flagged);
   const out = [];
   const gives = find('givesCorner'), threat = find('threat');
+  // Comparisons with the coach's move: the most important one or two only
+  // (one when the move gives away a corner, which says the most).
+  const RANK = ['corner', 'keepsCorner', 'pass', 'cornerLine', 'squeeze', 'mobility', 'stable', 'parity', 'greed', 'frontier', 'ownMobility'];
+  const vs = facts.filter(f => f.type === 'vsBest').sort((a, b) => RANK.indexOf(a.why) - RANK.indexOf(b.why));
+  const keep = new Set(vs.slice(0, gives ? 1 : 2));
+  facts = facts.filter(f => f.type !== 'vsBest' || keep.has(f));
   for (const f of facts) {
     switch (f.type) {
       case 'pass': out.push(`${cap(w.subj(mover))} had no legal move, so ${w.verb(mover, 'you', 'it')} passed.`); break;
@@ -173,6 +179,8 @@ export function describe(facts, ctx) {
         else if (f.why === 'frontier') { if (!B) out.push(S ? `${b}: frontier ${f.theirs} vs ${f.mine}.` : `${b} keeps ${w.poss(mover)} discs more tucked in: ${f.theirs} frontier discs instead of ${f.mine}.`); }
         else if (f.why === 'greed') out.push(B ? `This flips ${f.mine} discs; ${b} flips only ${f.theirs}. Early in the game, flipping fewer discs is usually better: it leaves your opponent fewer moves.`
           : S ? `Flips ${f.mine}; ${b} flips ${f.theirs}.` : `Flips ${f.mine} discs where ${b} flips ${f.theirs}: in the opening and midgame, fewer flips usually means fewer moves for ${w.subj(opp)}.`);
+        else if (f.why === 'squeeze') out.push(B ? `After ${w.poss(opp)} best answer, <b>${sqName(f.reply)}</b>, ${w.subj(mover)} would have only ${f.mine} ${f.mine === 1 ? 'move' : 'moves'}. With ${b} ${w.subj(mover)} would keep ${f.theirs}.`
+          : S ? `After ${sqName(f.reply)}: ${f.mine} moves for ${colorName(mover)}; ${b} keeps ${f.theirs}.` : `After ${w.poss(opp)} answer <b>${sqName(f.reply)}</b>, ${w.subj(mover)} ${w.verb(mover, 'are', 'is')} down to ${f.mine} ${f.mine === 1 ? 'move' : 'moves'}; ${b} keeps ${f.theirs}. Running short of moves is how corners get lost.`);
         else if (f.why === 'ownMobility') { if (!B) out.push(S ? `${b}: own mobility ${f.theirs} vs ${f.mine}.` : `${b} keeps more options for ${w.subj(mover)}: ${f.theirs} possible moves next time instead of ${f.mine}.`); }
         else if (f.why === 'stable') out.push(B ? `${b} would have made ${f.gain} more discs safe for good.` : `${b} gains ${f.gain} more stable discs.`);
         else if (f.why === 'parity') { if (!B) out.push(S ? `${b}: odd region (${f.size}).` : `${b} plays into an odd region (${f.size} empties), keeping the last move there for ${w.subj(mover)}.`); }

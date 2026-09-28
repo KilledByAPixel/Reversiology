@@ -22,6 +22,18 @@ if (process.argv[2] === '--merge') {
     keys.forEach(k => seen.add(k + p.side));
     out.push(p);
   }
+  // Difficulty, measured again the same way for every puzzle (it was found
+  // with other depths before): easy if a 1-move look finds it, medium at 3.
+  {
+    const { Engine, positionFromString } = await import('../src/engine/engine.js');
+    const { loadWeights } = await import('./weights-io.js');
+    const e = new Engine(loadWeights(new URL('../weights/eval.bin.gz', import.meta.url).pathname), { ttBits: 18 });
+    for (const p of out) {
+      const pos = positionFromString(p.board, p.side === 'O' ? WHITE : BLACK);
+      const found = depth => p.answers.includes(sqName(e.run(pos, { depth, exact: 0, all: true }).moves[0].move));
+      p.difficulty = found(1) ? 1 : found(3) ? 2 : 3;
+    }
+  }
   // A balanced set: per difficulty, spread over themes.
   const pick = [];
   for (const d of [1, 2, 3]) {
@@ -36,13 +48,21 @@ if (process.argv[2] === '--merge') {
     }
   }
   pick.sort((a, b) => a.difficulty - b.difficulty || b.empties - a.empties);
+  // The exact result of endgame puzzles found before it was recorded.
+  const need = pick.filter(p => p.exact && p.score == null);
+  if (need.length) {
+    const { Engine, positionFromString } = await import('../src/engine/engine.js');
+    const { loadWeights } = await import('./weights-io.js');
+    const e = new Engine(loadWeights(new URL('../weights/eval.bin.gz', import.meta.url).pathname), { ttBits: 20 });
+    for (const p of need) p.score = e.run(positionFromString(p.board, p.side === 'O' ? WHITE : BLACK), { depth: 8, exact: 20, all: false }).score;
+  }
   console.log(`// Puzzles: positions where one move is clearly best, found by
 // tools/gen-puzzles.js in games between the AI levels and checked by a deep
 // read or an exact solve. [board, side to move, answers, theme, difficulty
 // (1 easy, 2 medium, 3 hard), how much the answer gains over the next best
-// move (discs), exact].
+// move (discs), exact, and for an exact one the result with perfect play].
 export const PUZZLES = [
-${pick.map(p => `  ['${p.board}', '${p.side}', '${p.answers.join(' ')}', '${p.theme}', ${p.difficulty}, ${p.gap}, ${p.exact ? 1 : 0}],`).join('\n')}
+${pick.map(p => `  ['${p.board}', '${p.side}', '${p.answers.join(' ')}', '${p.theme}', ${p.difficulty}, ${p.gap}, ${p.exact ? 1 : 0}${p.exact ? `, ${p.score}` : ''}],`).join('\n')}
 ];`);
   process.exit(0);
 }
@@ -103,7 +123,7 @@ function judgePosition(b, pos) {
     const q = judge.run(pos, { depth, exact: 0, all: true });
     return answers.includes(q.moves[0].move);
   };
-  const difficulty = found(1) ? 1 : found(4) ? 2 : 3;
+  const difficulty = found(1) ? 1 : found(3) ? 2 : 3;
   // Theme, from what the answer does.
   const m = answers[0];
   const after = b.clone();
@@ -121,7 +141,7 @@ function judgePosition(b, pos) {
   else if (!answers.includes(greedy) && greedy != null) theme = 'quiet';
   else if (vs.some(f => f.why === 'mobility')) theme = 'mobility';
   else theme = 'best';
-  return { board: b.toString(), side: b.toPlay === BLACK ? 'X' : 'O', answers: answers.map(sqName), theme, difficulty, gap, exact, empties: b.empties };
+  return { board: b.toString(), side: b.toPlay === BLACK ? 'X' : 'O', answers: answers.map(sqName), theme, difficulty, gap, exact, empties: b.empties, score: exact ? best : null };
 }
 
 // The move flipping the most discs (what a beginner reaches for).

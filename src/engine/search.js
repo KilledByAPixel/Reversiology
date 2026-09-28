@@ -71,6 +71,7 @@ export class Search {
     this.next = new Int8Array(66);
     this.prev = new Int8Array(66);
     this.parity = 0;
+    this.smallBuf = new Int8Array(8 * 8);
     this.foff = new Int32Array(NF);
     for (let f = 0; f < NF; f++) this.foff[f] = GROUP_OFFSET[GROUP_OF[f]];
   }
@@ -340,7 +341,7 @@ export class Search {
       return -this.solve(ol, oh, pl, ph, -beta, -alpha, empties, true);
     }
     let ttMove = -1;
-    const useTT = empties >= 9;
+    const useTT = empties >= 8;
     if (useTT) {
       const e = this.ttProbe(pl, ph, ol, oh);
       if (e) {
@@ -416,29 +417,33 @@ export class Search {
   }
 
   // Few empties: try the empty squares directly (odd quadrants first), no
-  // move generation or table.
+  // move generation or table. The last two are handled on their own.
   solveSmall(pl, ph, ol, oh, alpha, beta, empties, passed) {
     this.nodes++;
-    if (empties === 1) return this.solveLast(pl, ph, ol, oh);
+    if (empties === 2) { const a = this.next[64]; return this.solve2(pl, ph, ol, oh, alpha, beta, a, this.next[a], passed); }
+    if (empties === 1) return this.solveLast(pl, ph, ol, oh, this.next[64]);
+    if (empties === 0) return finalScore(pl, ph, ol, oh);
+    // Move order, once: squares in odd quadrants first.
+    const buf = this.smallBuf, base = empties * 8, par = this.parity;
+    let n = 0;
+    for (let sq = this.next[64]; sq !== 65; sq = this.next[sq]) if ((par >> QUADRANT[sq]) & 1) buf[base + n++] = sq;
+    for (let sq = this.next[64]; sq !== 65; sq = this.next[sq]) if (!((par >> QUADRANT[sq]) & 1)) buf[base + n++] = sq;
     let best = -INF, moved = false;
-    for (let pass = 0; pass < 2; pass++) {
-      for (let sq = this.next[64]; sq !== 65; sq = this.next[sq]) {
-        const odd = (this.parity >> QUADRANT[sq]) & 1;
-        if (odd !== 1 - pass) continue;
-        // Must touch an opponent disc to flip anything.
-        if (!((NEIGH_LO[sq] & ol) | (NEIGH_HI[sq] & oh))) continue;
-        flips(sq, pl, ph, ol, oh);
-        const fl = R.lo, fh = R.hi;
-        if (!(fl | fh)) continue;
-        moved = true;
-        const nl = pl | fl | (sq < 32 ? 1 << sq : 0), nh = ph | fh | (sq >= 32 ? 1 << (sq - 32) : 0);
-        this.unlink(sq);
-        const v = -this.solveSmall(ol & ~fl, oh & ~fh, nl, nh, -beta, -alpha, empties - 1, false);
-        this.relink(sq);
-        if (v > best) {
-          best = v;
-          if (v > alpha) { alpha = v; if (v >= beta) return v; }
-        }
+    for (let i = 0; i < n; i++) {
+      const sq = buf[base + i];
+      // Must touch an opponent disc to flip anything.
+      if (!((NEIGH_LO[sq] & ol) | (NEIGH_HI[sq] & oh))) continue;
+      flips(sq, pl, ph, ol, oh);
+      const fl = R.lo, fh = R.hi;
+      if (!(fl | fh)) continue;
+      moved = true;
+      const nl = pl | fl | (sq < 32 ? 1 << sq : 0), nh = ph | fh | (sq >= 32 ? 1 << (sq - 32) : 0);
+      this.unlink(sq);
+      const v = -this.solveSmall(ol & ~fl, oh & ~fh, nl, nh, -beta, -alpha, empties - 1, false);
+      this.relink(sq);
+      if (v > best) {
+        best = v;
+        if (v > alpha) { alpha = v; if (v >= beta) return v; }
       }
     }
     if (moved) return best;
@@ -446,9 +451,36 @@ export class Search {
     return -this.solveSmall(ol, oh, pl, ph, -beta, -alpha, empties, true);
   }
 
-  // One empty square left.
-  solveLast(pl, ph, ol, oh) {
-    const sq = this.next[64];
+  // Two empty squares, a and b.
+  solve2(pl, ph, ol, oh, alpha, beta, a, b, passed) {
+    this.nodes++;
+    let best = -INF, moved = false;
+    if ((NEIGH_LO[a] & ol) | (NEIGH_HI[a] & oh)) {
+      flips(a, pl, ph, ol, oh);
+      const fl = R.lo, fh = R.hi;
+      if (fl | fh) {
+        moved = true;
+        best = -this.solveLast(ol & ~fl, oh & ~fh, pl | fl | (a < 32 ? 1 << a : 0), ph | fh | (a >= 32 ? 1 << (a - 32) : 0), b);
+        if (best >= beta) return best;
+        if (best > alpha) alpha = best;
+      }
+    }
+    if ((NEIGH_LO[b] & ol) | (NEIGH_HI[b] & oh)) {
+      flips(b, pl, ph, ol, oh);
+      const fl = R.lo, fh = R.hi;
+      if (fl | fh) {
+        moved = true;
+        const v = -this.solveLast(ol & ~fl, oh & ~fh, pl | fl | (b < 32 ? 1 << b : 0), ph | fh | (b >= 32 ? 1 << (b - 32) : 0), a);
+        if (v > best) best = v;
+      }
+    }
+    if (moved) return best;
+    if (passed) return finalScore(pl, ph, ol, oh);
+    return -this.solve2(ol, oh, pl, ph, -beta, -alpha, a, b, true);
+  }
+
+  // One empty square left, sq.
+  solveLast(pl, ph, ol, oh, sq) {
     const p = popcount(pl) + popcount(ph), o = popcount(ol) + popcount(oh);
     flips(sq, pl, ph, ol, oh);
     let f = popcount(R.lo) + popcount(R.hi);

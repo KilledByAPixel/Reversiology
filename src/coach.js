@@ -11,7 +11,9 @@ const sign = c => c === BLACK ? 1 : -1;
 // spread to games between River-level players, noisy the way real games are.
 export function winChance(score, empties, exact) {
   if (exact) return score > 0 ? 1 : score < 0 ? 0 : 0.5;
-  const spread = 3 + empties * 0.32;
+  // In the first moves (over 40 empty squares) a small lead means even less:
+  // the bar stays near even until something real happens.
+  const spread = 3 + empties * 0.32 + Math.max(0, empties - 40) * 0.4;
   return 1 / (1 + Math.exp(-score / spread));
 }
 

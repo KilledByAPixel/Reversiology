@@ -99,7 +99,7 @@ export function compareFacts(before, move, best, mover) {
   const gaveMine = cornersAfter(mine).length, gaveBest = cornersAfter(theirs).length;
   if (gaveMine > gaveBest) out.push({ type: 'vsBest', why: 'keepsCorner', best, corners: cornersAfter(mine) });
   if (!bo.length && !theirs.b.isOver && mo.length) out.push({ type: 'vsBest', why: 'pass', best });
-  else if (mo.length >= bo.length + 2 && mo.length >= bo.length * 1.3 && before.empties > 12) out.push({ type: 'vsBest', why: 'mobility', best, mine: mo.length, theirs: bo.length });
+  else if (mo.length >= bo.length + 2 && before.empties > 12) out.push({ type: 'vsBest', why: 'mobility', best, mine: mo.length, theirs: bo.length });
   const fr = r => frontierDiscs(r.b, mover).size;
   if (fr(mine) >= fr(theirs) + 2 && before.empties > 16) out.push({ type: 'vsBest', why: 'frontier', best, mine: fr(mine), theirs: fr(theirs) });
   // The mover's own options on the next turn (if the opponent passed): a
@@ -115,6 +115,21 @@ export function compareFacts(before, move, best, mover) {
     if (regions.length > 1 && rm && rb && rm.length % 2 === 0 && rb.length % 2 === 1) out.push({ type: 'vsBest', why: 'parity', best, size: rb.length });
   }
   return out;
+}
+
+// The mover's number of moves after `move` and the opponent's `reply`,
+// against after `best` and `bestReply`: a move that leaves you squeezed a
+// move later. null when the difference is small or a line is missing.
+export function squeezeFact(before, move, reply, best, bestReply, mover) {
+  if (reply == null || bestReply == null || reply < 0 || bestReply < 0 || before.empties <= 14) return null;
+  const count = (m, r) => {
+    const b = before.clone(); b.toPlay = mover;
+    if (!b.play(m) || !b.play(r)) return null;
+    return b.legalMoves(mover).length;
+  };
+  const mine = count(move, reply), theirs = count(best, bestReply);
+  if (mine == null || theirs == null || theirs < mine + 3) return null;
+  return { type: 'vsBest', why: 'squeeze', best, reply, mine, theirs };
 }
 
 // A final disc count for a perfect-play margin, as [mover, opponent] out of 64.
@@ -138,6 +153,10 @@ export function nodeFacts(node, reads) {
     const played = reads.after && reads.after.moves && reads.after.moves[0];
     const mine = played && cornerInLine([played.move, ...(played.pv || [])], 3 - node.color, node.color, 4);
     if (c && c.move !== best.move && !mine) node.facts.push({ type: 'vsBest', why: 'cornerLine', best: best.move, corner: c.move });
+    // A move later: the mover's choices after the opponent's best answer,
+    // against after the coach's move and its answer.
+    const squeeze = squeezeFact(node.parent.board, node.move, played && played.move, best.move, best.pv && best.pv[0], node.color);
+    if (squeeze) node.facts.push(squeeze);
   }
   return node.facts;
 }
