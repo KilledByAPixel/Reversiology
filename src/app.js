@@ -13,10 +13,12 @@ import { linkPoints, pointReadout, movePhrase, plainText, positionPhrase, result
 import { initAnnouncer, announce, speak, hush, setSpeech, repeatLast, speechAvailable } from './announce.js';
 import { renderGraph } from './graph.js';
 import { discSound, playSound, setSoundEnabled, SOUNDS, ZZFXSound } from './sound.js';
+import { puzzleAt, nextPuzzle, puzzleCount, judge, prompt, THEME_HINTS, THEME_NAMES, DIFFICULTY } from './puzzle.js';
 
 const $ = s => document.querySelector(s);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const STORE = 'reversiology.v1';
+const PUZZLE_STORE = 'reversiology.puzzles.v1';
 
 const TOGGLES = [
   ['moves', 'Legal moves', 'A dot on every square where the side to move can play.', 'M'],
@@ -66,8 +68,13 @@ let coachJobs = [];          // per coach engine: the node it is reading
 let locatePt = null;         // a square the player is hovering in the coach's text
 let threat = null;           // { node, pending | none | move, pv, facts, cost } — the opponent's idea
 let overShown = null;        // the finished position whose result was announced
+// Puzzle mode: { p (puzzle.js), status 'solving' | 'correct' | 'wrong', lines,
+// hint, saved: the game and colour to return to }. Solved puzzle ids persist.
+let puzzle = null;
+let puzzleProgress = { solved: new Set(), difficulty: 0, last: -1 };
 
 const COACHES = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 2));
+const PUZZLE_TOTAL = puzzleCount();
 const opponent = new Engine('opponent');
 const coach = new EnginePool('coach', COACHES);
 // Answers "what would the opponent play if it were their move?"
@@ -83,7 +90,7 @@ function onCursor(p) {
 
 // ------------------------------------------------------------------ helpers
 
-const aiColor = () => settings.human ? 3 - settings.human : 0;
+const aiColor = () => puzzle ? 0 : settings.human ? 3 - settings.human : 0;
 const level = () => LEVELS[settings.level];
 const aiLabel = () => `AI (${level().name})`;
 const who = c => !settings.human ? colorName(c) : c === settings.human ? 'You' : 'AI';
@@ -160,6 +167,7 @@ function playMove(move, { human = false, news = '' } = {}) {
   else discSound(node.flipped.length, !!aiColor() && node.color === aiColor(), CORNERS.includes(move));
   if (game.isOver()) finalRead(node);
   tryGrade(node);
+  if (puzzle && human && puzzle.status === 'solving' && node.parent === game.root) puzzleAnswered(move);
   afterChange();
   if (game.isOver()) gameOver();
   // Replaying a move that already has a (taken-back) AI reply below it: the
@@ -188,6 +196,7 @@ function onHover(p, byKey = false) {
 }
 
 function takeBack() {
+  if (puzzle) { retryPuzzle(); return; }
   // Nothing to take back at the start: leave the AI's first move alone.
   if (!game.current.parent && !resigned) return;
   cancelAI();
@@ -477,6 +486,7 @@ function render() {
   renderPlayers();
   renderCoach();
   renderScorePanel();
+  renderPuzzle();
   renderNav();
   renderStatus();
   renderGraph($('#graph'), game.line(), game.current, goTo, graphMark);
@@ -512,12 +522,12 @@ function renderBoard() {
   if (sh.danger && !over) s.danger = dangerSquares(b);
   if (sh.parity && !over && b.empties <= 24) s.regions = emptyRegions(b);
   if (sh.numbers) s.numbers = moveNumbers(node);
-  const hintsVisible = an && (hintOn || sh.hints) && !over && !aiToMove;
+  const hintsVisible = an && (hintOn || sh.hints) && !over && !aiToMove && puzzleSpoilersOk();
   if (hintsVisible) {
     s.hints = hintList(an);
     const m = hoverPt !== null && an.moves.find(x => x.move === hoverPt);
     if (m && m.pv) s.pv = pvDiscs(b.toPlay, [m.move, ...m.pv]);
-  } else if (sh.book && !over && !aiToMove && node.depth < 30) {
+  } else if (sh.book && !over && !aiToMove && node.depth < 30 && !puzzle) {
     const book = bookMoves(node);
     if (book.length) s.hints = book.map(x => ({ move: x.move, rank: 1, color: '#7b5ea7', label: '📖', sub: '' }));
   }
@@ -590,7 +600,8 @@ function renderCoach() {
   const entries = [];
   if (node.parent && node.parent.parent && node.parent.move !== PASS) entries.push(node.parent);
   if (node.parent) entries.push(node);
-  setHTML(fb, linkPoints(entries.length ? entries.map(moveEntry).join('') : `<p class="tip">${openingTip()}</p>`));
+  if (!puzzleSpoilersOk()) setHTML(fb, entries.length ? '<p class="muted">The coach keeps quiet until you solve the puzzle or ask for the answer.</p>' : '');
+  else setHTML(fb, linkPoints(entries.length ? entries.map(moveEntry).join('') : puzzle ? '' : `<p class="tip">${openingTip()}</p>`));
   fb.onclick = e => {
     const btn = e.target.closest && e.target.closest('[data-act]');
     if (!btn) return;
@@ -731,9 +742,11 @@ function renderNav() {
   $('#moveLabel').textContent = node.parent ? `Move ${node.depth} · ${colorName(node.color)} ${sqName(node.move)}` : 'Start';
   $('[data-nav=first]').disabled = $('[data-nav=prev]').disabled = !node.parent;
   $('[data-nav=next]').disabled = $('[data-nav=last]').disabled = !node.children.length;
-  $('#btnUndo').disabled = !node.parent && !resigned;
-  $('#btnAI').disabled = !!aiNode || game.isOver() || !!resigned;
-  $('#btnResign').disabled = game.isOver() || !settings.human || !!resigned;
+  $('#btnAI').disabled = !!aiNode || game.isOver() || !!resigned || !!puzzle;
+  $('#btnResign').disabled = game.isOver() || !settings.human || !!resigned || !!puzzle;
+  $('#btnHint').disabled = !!puzzle && !puzzleSpoilersOk();
+  $('#btnPuzzle').classList.toggle('on', !!puzzle);
+  $('#btnUndo').disabled = puzzle ? !game.current.parent : !node.parent && !resigned;
   $('#btnHint').classList.toggle('on', hintOn);
   $('#btnThreat').classList.toggle('on', !!threat && threat.node === node);
   $('#btnThreat').disabled = game.isOver();
@@ -764,6 +777,7 @@ function renderStatus() {
   const h = hoverPt !== null ? hoverInfo() : null;
   if (h && !h.ok && !hoverByKey) { text = reasonText(h.reason); kind = 'bad'; }
   else if (flashMsg) { text = flashMsg.text; kind = flashMsg.kind; }
+  else if (puzzle && puzzle.status === 'solving' && game.current === game.root) text = prompt(puzzle.p);
   else if (aiNode) text = aiBest ? 'Finding the best move…' : `${aiLabel()} is thinking…`;
   else if (resigned) text = `${colorName(resigned)} resigned.`;
   else if (game.isOver(node)) text = 'Neither player can move. The game is over.';
@@ -775,6 +789,116 @@ function renderStatus() {
   el.className = `message ${kind}`;
 }
 
+// ------------------------------------------------------------------ puzzles
+
+function enterPuzzles() {
+  cancelAI();
+  stopCoach();
+  puzzle = { saved: { game, human: settings.human, resigned } };
+  resigned = 0;
+  startPuzzle(nextPuzzle(puzzleProgress.solved, puzzleProgress.difficulty, puzzleProgress.last));
+}
+
+function startPuzzle(i) {
+  if (i == null) { flash('No puzzles at that difficulty.'); return; }
+  cancelAI();
+  stopCoach();
+  const p = puzzleAt(i);
+  puzzleProgress.last = i;
+  puzzle = { ...puzzle, p, status: 'solving', lines: [], reveal: [], hint: false, shown: false };
+  const b = p.board;
+  game = new Game({ setup: [...b.color].flatMap((c, q) => c ? [[q, c]] : []), toPlay: b.toPlay });
+  settings.human = b.toPlay;
+  better = null; hintOn = false; threat = null; overShown = null;
+  afterChange();
+  announce(`Puzzle. ${prompt(p)}`);
+}
+
+function puzzleAnswered(move) {
+  const r = judge(puzzle.p, move, coachLevel());
+  puzzle.status = r.correct ? 'correct' : 'wrong';
+  puzzle.lines = r.lines;
+  puzzle.reveal = r.reveal;
+  if (r.correct && !puzzle.shown) puzzleProgress.solved.add(puzzle.p.id);
+  playSound(r.correct ? 'win' : 'lose');
+  announce(r.correct ? `Correct! ${plainText(r.lines.join(' '))}` : `Not the best move. ${plainText(r.lines.join(' '))}`);
+}
+
+function retryPuzzle() {
+  cancelAI();
+  game.goTo(game.root);
+  puzzle.status = 'solving';
+  puzzle.lines = [];
+  better = null; threat = null;
+  save(); render(); scheduleCoach();
+}
+
+function showPuzzleAnswer() {
+  retryPuzzle();
+  puzzle.shown = true;
+  const m = puzzle.p.answers[0];
+  better = { node: game.root, move: m, pv: [] };
+  flash(`The answer: ${sqName(m)}. Play it to see why.`);
+  render();
+}
+
+function leavePuzzles() {
+  if (!puzzle) return;
+  cancelAI();
+  stopCoach();
+  game = puzzle.saved.game;
+  settings.human = puzzle.saved.human;
+  resigned = puzzle.saved.resigned;
+  puzzle = null;
+  better = null; hintOn = false; threat = null;
+  syncOptions();
+  afterChange();
+}
+
+// In a puzzle, the coach keeps the answer to itself until it's solved or shown.
+const puzzleSpoilersOk = () => !puzzle || puzzle.status === 'correct' || puzzle.shown;
+
+function renderPuzzle() {
+  const el = $('#puzzlePanel');
+  el.hidden = !puzzle;
+  if (!puzzle) return;
+  const p = puzzle.p, pr = puzzleProgress;
+  const total = puzzleCount(pr.difficulty), solved = [...pr.solved].length;
+  const diffs = [0, 1, 2, 3].map(d => `<option value="${d}"${d === pr.difficulty ? ' selected' : ''}>${d ? DIFFICULTY[d] : 'All levels'}</option>`).join('');
+  let body = '';
+  if (puzzle.status === 'solving') {
+    body = `<p class="big">${prompt(p)}</p>` +
+      (puzzle.hint ? `<p class="hint-line">💡 ${THEME_HINTS[p.theme] || THEME_HINTS.best}</p>` : '') +
+      `<div class="fb-actions"><button data-act="hint"${puzzle.hint ? ' disabled' : ''}>Hint</button><button data-act="answer">Show answer</button><button data-act="next">Skip</button></div>`;
+  } else {
+    const ok = puzzle.status === 'correct';
+    const answers = p.answers.map(m => `<b>${sqName(m)}</b>`).join(' or ');
+    body = `<p class="big ${ok ? 'good' : 'bad'}">${ok ? '✓ Correct!' : '✗ Not the best move.'}</p>` +
+      (ok ? `<p>${THEME_NAMES[p.theme] || ''}${p.exact ? ' · worked out exactly' : ''}.</p>` : puzzle.shown ? `<p>The answer is ${answers}.</p>` : '') +
+      (puzzle.lines.length ? `<ul class="explain">${puzzle.lines.map(t => `<li>${t}</li>`).join('')}</ul>` : '') +
+      (!ok && puzzle.shown && puzzle.reveal.length ? `<ul class="explain">${puzzle.reveal.map(t => `<li>${t}</li>`).join('')}</ul>` : '') +
+      (!ok && !puzzle.shown && !puzzle.lines.length ? '<p class="muted">There\'s a better move here. Try again, or ask for a hint.</p>' : '') +
+      `<div class="fb-actions">${ok ? '' : `<button data-act="retry">Try again</button>${puzzle.hint ? '' : '<button data-act="hint">Hint</button>'}${puzzle.shown ? '' : '<button data-act="answer">Show answer</button>'}`}<button data-act="next" class="primary">Next puzzle</button></div>` +
+      (!ok && puzzle.hint ? `<p class="hint-line">💡 ${THEME_HINTS[p.theme] || THEME_HINTS.best}</p>` : '');
+  }
+  setHTML(el, linkPoints(`<h2>Puzzle · ${DIFFICULTY[p.difficulty]} <span class="muted small">${solved} solved of ${PUZZLE_TOTAL}</span></h2>` + body +
+    `<div class="pz-foot"><label>Show <select data-act="difficulty">${diffs}</select></label><button data-act="leave">Back to my game</button></div>`));
+  el.onclick = e => {
+    const act = e.target.dataset && e.target.dataset.act;
+    if (act === 'hint') { puzzle.hint = true; announce(THEME_HINTS[p.theme] || THEME_HINTS.best); render(); }
+    if (act === 'answer') { if (puzzle.status === 'wrong') { puzzle.shown = true; render(); } else showPuzzleAnswer(); }
+    if (act === 'retry') retryPuzzle();
+    if (act === 'next') startPuzzle(nextPuzzle(puzzleProgress.solved, puzzleProgress.difficulty, p.index));
+    if (act === 'leave') leavePuzzles();
+  };
+  el.onchange = e => {
+    if (e.target.dataset.act !== 'difficulty') return;
+    puzzleProgress.difficulty = +e.target.value;
+    save();
+    startPuzzle(nextPuzzle(puzzleProgress.solved, puzzleProgress.difficulty, -1));
+  };
+}
+
 // ------------------------------------------------------------------ persistence
 
 // Child-index path from the root to node.
@@ -782,8 +906,18 @@ const pathOf = node => { const p = []; for (let n = node; n.parent; n = n.parent
 
 function save() {
   try {
-    localStorage.setItem(STORE, JSON.stringify({ settings, text: game.toText(), path: pathOf(game.current), resigned }));
+    // In puzzle mode the game to come back to is saved, not the puzzle.
+    const g = puzzle ? puzzle.saved.game : game, st = puzzle ? { ...settings, human: puzzle.saved.human } : settings;
+    localStorage.setItem(STORE, JSON.stringify({ settings: st, text: g.toText(), path: pathOf(g.current), resigned: puzzle ? puzzle.saved.resigned : resigned }));
+    localStorage.setItem(PUZZLE_STORE, JSON.stringify({ solved: [...puzzleProgress.solved], difficulty: puzzleProgress.difficulty, last: puzzleProgress.last }));
   } catch { /* storage unavailable */ }
+}
+
+function loadPuzzleProgress() {
+  try {
+    const d = JSON.parse(localStorage.getItem(PUZZLE_STORE));
+    if (d) puzzleProgress = { solved: new Set(d.solved || []), difficulty: [0, 1, 2, 3].includes(d.difficulty) ? d.difficulty : 0, last: d.last ?? -1 };
+  } catch { /* none saved */ }
 }
 
 function load() {
@@ -926,7 +1060,8 @@ function setupControls() {
   $('#btnAI').onclick = () => aiMove(true, true);
   $('#btnThreat').onclick = toggleThreat;
   $('#btnResign').onclick = resign;
-  $('#btnNew').onclick = openNewGame;
+  $('#btnNew').onclick = () => { if (puzzle) leavePuzzles(); openNewGame(); };
+  $('#btnPuzzle').onclick = () => puzzle ? leavePuzzles() : enterPuzzles();
   $('#btnExport').onclick = exportGame;
   $('#btnImport').onclick = () => $('#fileInput').click();
   $('#fileInput').onchange = async e => {
@@ -972,6 +1107,7 @@ initAnnouncer($('#announcer'));
 setupControls();
 setupDialog();
 if (!load()) game = new Game();
+loadPuzzleProgress();
 setSoundEnabled(settings.sound);
 setSpeech(settings.speak);
 syncOptions();
