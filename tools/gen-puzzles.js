@@ -2,7 +2,7 @@
 // one move (or a few equal ones) is clearly best, checked by a deep read or an
 // exact solve. Each gets a theme from the coach's facts about the answer, and
 // a difficulty from how deep the engine must read to find it.
-//   node tools/gen-puzzles.js <games> <seed> > puzzles-part.json
+//   node tools/gen-puzzles.js <games> <seed> [min level] [min difficulty] > puzzles-part.json
 // then node tools/gen-puzzles.js --merge part1.json part2.json ... > src/puzzles.js
 import { readFileSync } from 'node:fs';
 import { Board, BLACK, WHITE, PASS, CORNERS, SYMMETRIES, sqName } from '../src/board.js';
@@ -47,7 +47,9 @@ ${pick.map(p => `  ['${p.board}', '${p.side}', '${p.answers.join(' ')}', '${p.th
   process.exit(0);
 }
 
+// Optional: the weakest level to play (0-8) and the least difficulty to keep.
 const games = +(process.argv[2] || 20), seed0 = +(process.argv[3] || 1);
+const minLevel = +(process.argv[4] || 1), minDifficulty = +(process.argv[5] || 1);
 const W = loadWeights(new URL('../weights/eval.bin.gz', import.meta.url).pathname);
 const player = new Engine(W, { ttBits: 18 }), judge = new Engine(W, { ttBits: 20 });
 let s = seed0 * 2654435761 >>> 0 || 1;
@@ -56,7 +58,8 @@ const rand = () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return (s >>> 0) 
 const out = [];
 for (let g = 0; g < games; g++) {
   const b = new Board();
-  const lvA = LEVELS[1 + ((rand() * 6) | 0)], lvB = LEVELS[1 + ((rand() * 6) | 0)];
+  const pickLevel = () => LEVELS[minLevel + ((rand() * (7 - minLevel)) | 0)];
+  const lvA = pickLevel(), lvB = pickLevel();
   for (let k = 0; k < 2; k++) { const ms = b.legalMoves(); b.play(ms[(rand() * ms.length) | 0]); }
   while (!b.isOver) {
     const ms = b.legalMoves();
@@ -64,7 +67,7 @@ for (let g = 0; g < games; g++) {
     const pos = positionFromColors(b.color, b.toPlay);
     if (ms.length >= 3 && b.empties <= 50 && b.empties >= 6 && rand() < 0.3) {
       const p = judgePosition(b, pos);
-      if (p) out.push(p);
+      if (p && p.difficulty >= minDifficulty) out.push(p);
     }
     b.play(chooseLevelMove(player, pos, b.toPlay === BLACK ? lvA : lvB, rand));
   }
