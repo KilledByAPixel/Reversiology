@@ -11,13 +11,15 @@ const loadCore = () => core ||= fetch(new URL('./engine/core.wasm', import.meta.
   .then(res => res.ok ? res.arrayBuffer() : null, () => null);
 
 export class Engine {
-  constructor(name) {
+  // ttBits: the size of the worker's transposition table (2^ttBits entries,
+  // 24 bytes each).
+  constructor(name, { ttBits = 18 } = {}) {
     this.name = name;
     this.worker = new Worker(new URL('./engine-worker.js', import.meta.url), { type: 'module' });
     Promise.all([loadWeights(), loadCore()]).then(([w, c]) => {
       // Each worker gets its own copy (transferred, so it isn't copied twice).
       const bytes = w.bytes && w.bytes.slice(0), wasm = c && c.slice(0);
-      this.worker.postMessage({ type: 'weights', bytes, wasm, error: w.error }, [bytes, wasm].filter(Boolean));
+      this.worker.postMessage({ type: 'weights', bytes, wasm, ttBits, error: w.error }, [bytes, wasm].filter(Boolean));
     });
     this.nextId = 1;
     this.pending = null;

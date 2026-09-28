@@ -110,6 +110,14 @@ export function flips(sq, pl, ph, ol, oh) {
   R.lo = fl; R.hi = fh;
 }
 
+// The squares next to any disc of (lo, hi), into R.
+export function neighbours(lo, hi) {
+  const hl = ((lo << 1) & NOT_A) | ((lo >>> 1) & NOT_H), hh = ((hi << 1) & NOT_A) | ((hi >>> 1) & NOT_H);
+  const rl = lo | hl, rh = hi | hh;
+  R.lo = hl | (rl << 8) | (rl >>> 8) | (rh << 24);
+  R.hi = hh | (rh << 8) | (rl >>> 24) | (rh >>> 8);
+}
+
 // Squares next to each square (for frontier and potential mobility).
 export const NEIGH_LO = new Int32Array(64), NEIGH_HI = new Int32Array(64);
 for (let sq = 0; sq < 64; sq++) {

@@ -6,8 +6,8 @@ import { unpackWeights } from '../src/engine/weights.js';
 import { useWasm } from '../src/engine/wasm.js';
 
 // The WebAssembly search core, for every Engine made after this (unless
-// NO_WASM is set in the environment).
-if (!process.env.NO_WASM) useWasm(new WebAssembly.Module(readFileSync(new URL('../src/engine/core.wasm', import.meta.url))));
+// NO_WASM is set in the environment; CORE_WASM=file tries another build).
+if (!process.env.NO_WASM) useWasm(new WebAssembly.Module(readFileSync(process.env.CORE_WASM || new URL('../src/engine/core.wasm', import.meta.url))));
 
 export function loadWeights(path) {
   const buf = gunzipSync(readFileSync(path));

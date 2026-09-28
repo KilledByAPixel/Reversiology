@@ -82,9 +82,10 @@ export class Engine {
     moves.sort((a, b) => b.score - a.score);
 
     const solveNow = empties <= exact;
-    // Midgame depths first (quick feedback, and move order for the solve).
+    // Midgame depths first (quick feedback, move order for the solve, and the
+    // answer if the solve runs out of time).
     const depths = [];
-    const midMax = solveNow ? Math.min(depth, Math.max(1, empties - 8), 10) : Math.min(depth, empties - 1);
+    const midMax = solveNow ? Math.min(depth, Math.max(1, empties - 8), 12) : Math.min(depth, empties - 1);
     for (let d = Math.min(2, midMax); d <= midMax; d++) depths.push(d);
     if (solveNow || depth >= empties - 1) depths.push(empties); // reaches the end: exact
     let result = { ...base, moves: moves.map(m => ({ ...m })), done: false };

@@ -36,9 +36,9 @@ const TOGGLES = [
 // Coach depth: plies read in the midgame (with ProbCut at a confidence that
 // rarely changes a score), empties solved exactly, time cap.
 const COACH_DEPTHS = {
-  quick: { depth: 8, exact: 14, probcut: 2, maxTime: 4000 },
-  normal: { depth: 10, exact: 16, probcut: 2, maxTime: 8000 },
-  deep: { depth: 12, exact: 18, probcut: 2, maxTime: 20000 },
+  quick: { depth: 10, exact: 16, probcut: 2, maxTime: 4000 },
+  normal: { depth: 12, exact: 18, probcut: 2, maxTime: 8000 },
+  deep: { depth: 14, exact: 20, probcut: 2, maxTime: 20000 },
 };
 
 const DEFAULTS = {
@@ -75,7 +75,7 @@ let puzzleProgress = { solved: new Set(), difficulty: 0, last: -1 };
 
 const COACHES = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 2));
 const PUZZLE_TOTAL = puzzleCount();
-const opponent = new Engine('opponent');
+const opponent = new Engine('opponent', { ttBits: 20 }); // a bigger table for the deepest levels
 const coach = new EnginePool('coach', COACHES);
 // Answers "what would the opponent play if it were their move?" Started on
 // first use: each worker holds its own copy of the evaluation.

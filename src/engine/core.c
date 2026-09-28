@@ -75,6 +75,13 @@ static inline u64 flips(int sq, u64 P, u64 O) {
   return f;
 }
 
+// The squares next to any of the discs in b.
+static inline u64 neighbours(u64 b) {
+  u64 h = ((b << 1) & 0xfefefefefefefefeULL) | ((b >> 1) & 0x7f7f7f7f7f7f7f7fULL);
+  u64 r = b | h;
+  return h | (r << 8) | (r >> 8);
+}
+
 // Squares next to each square.
 static u64 NEIGH[64];
 
@@ -382,7 +389,8 @@ static int solve(u64 P, u64 O, int alpha, int beta, int empties, int passed) {
       }
     }
   }
-  // Fastest first: moves that leave the opponent fewest replies.
+  // Fastest first: moves that leave the opponent fewest replies (and fewest
+  // places to get replies soon).
   int8_t mv[32]; int32_t sc[32];
   int n = 0;
   while (moves) { mv[n++] = lowBit(moves); moves &= moves - 1; }
@@ -392,7 +400,10 @@ static int solve(u64 P, u64 O, int alpha, int beta, int empties, int passed) {
     u64 f = flips(sq, P, O);
     u64 om = mobility(O & ~f, P | f | (1ULL << sq));
     int k = popcount(om) + popcount(om & 0x8100000000000081ULL);
-    sc[i] = -k * 16 + SQUARE_VALUE[sq] + ((parity >> QUADRANT[sq]) & 1) * 4;
+    // Empty squares next to the mover's discs: where the opponent may soon play.
+    const u64 np = P | f | (1ULL << sq), empty = ~(np | (O & ~f));
+    int pm = popcount(neighbours(np) & empty);
+    sc[i] = -k * 32 - pm * 2 + SQUARE_VALUE[sq] + ((parity >> QUADRANT[sq]) & 1) * 8;
   }
   sortMoves(mv, sc, n);
   const int a0 = alpha;

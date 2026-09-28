@@ -5,7 +5,7 @@
 //
 // Everything runs synchronously on preallocated typed arrays; the worker
 // (engine-worker.js) slices long searches into steps so it can be cancelled.
-import { R, mobility, flips, popcount, lowBit, NEIGH_LO, NEIGH_HI } from './bits.js';
+import { R, mobility, flips, neighbours, popcount, lowBit, NEIGH_LO, NEIGH_HI } from './bits.js';
 import { NF, X2F_START, X2F_FLAT, FEATURES, GROUP_OF, GROUP_OFFSET } from './patterns.js';
 import { CANON_OF, CANON_OF_SWAPPED, PACKED_STAGE } from './weights.js';
 
@@ -356,7 +356,8 @@ export class Search {
         }
       }
     }
-    // Fastest first: moves that leave the opponent fewest replies.
+    // Fastest first: moves that leave the opponent fewest replies (and fewest
+    // places to get replies soon).
     const ply = 64 - empties, base = ply * 32, mv = this.moves, sc = this.order;
     let n = 0;
     while (ml) { const s = lowBit(ml); ml &= ml - 1; mv[base + n++] = s; }
@@ -371,7 +372,10 @@ export class Search {
       let om = popcount(R.lo) + popcount(R.hi);
       // Opponent corners count double.
       om += popcount(R.lo & 0x81) + popcount(R.hi & 0x81000000);
-      sc[base + i] = -om * 16 + SQUARE_VALUE[sq] + ((this.parity >> QUADRANT[sq]) & 1) * 4;
+      // Empty squares next to the mover's discs: where the opponent may soon play.
+      neighbours(nl, nh);
+      const pm = popcount(R.lo & ~(nl | ol)) + popcount(R.hi & ~(nh | oh));
+      sc[base + i] = -om * 32 - pm * 2 + SQUARE_VALUE[sq] + ((this.parity >> QUADRANT[sq]) & 1) * 8;
     }
     for (let i = 1; i < n; i++) {
       const m = mv[base + i], s = sc[base + i];
