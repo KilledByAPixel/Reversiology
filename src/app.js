@@ -396,6 +396,7 @@ function announceGrade(node) {
   const cur = game.current;
   if (node.announced || !node.grade || !settings.show.feedback || (node !== cur && node !== cur.parent)) return;
   if (!node.analysisDone && !game.isOver(node)) return;
+  if (!puzzleSpoilersOk()) return; // the grade would name the puzzle's answer
   node.announced = true;
   announce(gradeSpeech(node));
 }
@@ -1062,6 +1063,8 @@ function importGame(text) {
     const g = Game.fromText(text);
     cancelAI();
     stopCoach();
+    // Loading a game leaves the puzzles: the loaded game replaces the one they'd return to.
+    puzzle = null; hintOn = false;
     game = g;
     settings.human = 0;
     resigned = 0; better = null; threat = null; overShown = null;

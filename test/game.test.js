@@ -96,3 +96,35 @@ test('random games play to the end with passes', () => {
     assert.equal(back.line().at(-1).board.toString(), g.board.toString());
   }
 });
+
+test('a board with extra corner discs loads exactly as written', () => {
+  // Every set of corners, either colour: handicap games and custom setups alike.
+  const corners = [0, 7, 56, 63];
+  for (let mask = 1; mask < 16; mask++) {
+    for (const c of [BLACK, WHITE]) {
+      const b = new Board();
+      corners.forEach((p, k) => { if (mask >> k & 1) b.color[p] = c; });
+      const g = new Game({ setup: [...b.color].flatMap((v, p) => v ? [[p, v]] : []) });
+      const back = Game.fromText(g.toText());
+      assert.equal(back.root.board.toString(), g.root.board.toString(), `corners ${mask} colour ${c}`);
+      assert.equal(back.root.board.toPlay, g.root.board.toPlay);
+    }
+  }
+  for (let n = 1; n <= 4; n++) {
+    const g = new Game({ handicap: n, handicapColor: WHITE });
+    const back = Game.fromText(g.toText());
+    assert.equal(back.root.board.toString(), g.root.board.toString());
+    assert.equal(back.handicap, n, 'still a handicap game');
+  }
+});
+
+test('text that isn\'t a game record is refused, not loaded as an empty game', () => {
+  for (const [t, why] of [['not a game', /isn't a game record/], ['', /no moves/], ['f5 ) d6', /closing bracket/],
+    ['f5 d6 (c5', /closing bracket|isn't a legal move/], ['f5 d6 z9', /isn't a game record/], ['f5 d6 c3 extra words', /isn't a game record/]]) {
+    assert.throws(() => Game.fromText(t), why, JSON.stringify(t));
+  }
+  // Still fine: comments, tags, move numbers and separators.
+  for (const t of ['# my game\nf5 d6 c3', '[Event "club"] 1. f5 d6 2. c3', 'f5, d6; c3', 'f5 d6 {a comment} c3']) {
+    assert.equal(Game.fromText(t).transcript(), 'f5d6c3', t);
+  }
+});

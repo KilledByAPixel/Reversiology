@@ -1,7 +1,7 @@
 // Game record: a tree of positions (so take-backs and "what if" branches are
 // never lost), rule checks with human-readable reasons, the final count, and
 // saving and loading as move transcripts ("f5d6c3...").
-import { Board, BLACK, WHITE, EMPTY, PASS, CORNERS, sqName, parseSq } from './board.js';
+import { Board, BLACK, WHITE, EMPTY, PASS, sqName, parseSq } from './board.js';
 
 let nextId = 1;
 
@@ -175,19 +175,30 @@ export class Game {
       const std = new Board();
       const extra = stones.filter(([p, c]) => std.color[p] !== c);
       const missing = [...std.color].some((c, i) => c && !stones.some(([p, k]) => p === i && k === c));
-      if (!missing && extra.length && extra.every(([p, c]) => CORNERS.includes(p) && c === extra[0][1]) && toPlay === BLACK) {
+      const handicapSquares = HANDICAP_CORNERS.slice(0, extra.length);
+      if (!missing && extra.length && toPlay === BLACK && extra.every(([p, c]) => handicapSquares.includes(p) && c === extra[0][1])) {
         game = new Game({ handicap: extra.length, handicapColor: extra[0][1] });
       }
       src = src.slice(0, setup.index) + ' ' + src.slice(setup.index + setup[0].length);
     } else game = new Game();
-    // Tokens: moves, "pass", and parentheses for variations.
-    const tokens = src.replace(/#[^\n]*/g, ' ').match(/\(|\)|pass|pa|--|[a-h][1-8]/gi) || [];
+    // Tokens: moves, "pass", and parentheses for variations. Comments (# ...),
+    // bracketed tags ([Event "..."], {...}), move numbers and separators are
+    // skipped; anything else means this isn't a game record.
+    src = src.replace(/#[^\n]*/g, ' ').replace(/\[[^\]\n]*\]|\{[^}]*\}/g, ' ');
+    const TOKEN = /\(|\)|pass|pa|--|[a-h][1-8]/gi;
+    const junk = src.replace(TOKEN, ' ').replace(/\d+\.+|[,;.\-]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (junk) throw new Error(`it isn't a game record ("${junk.length > 24 ? junk.slice(0, 24).trim() + '…' : junk}" isn't a move)`);
+    const tokens = src.match(TOKEN) || [];
+    if (!setup && !tokens.some(t => t !== '(' && t !== ')')) throw new Error('there are no moves in it');
     let i = 0;
     const parse = (from, first) => {
       let node = from;
       while (i < tokens.length) {
         const t = tokens[i];
-        if (t === ')') { i++; return; }
+        if (t === ')') {
+          if (first) throw new Error('a closing bracket has no opening one');
+          i++; return;
+        }
         if (t === '(') {
           i++;
           // A variation replaces the last move: it branches from its parent.

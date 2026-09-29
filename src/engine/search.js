@@ -199,6 +199,8 @@ export class Search {
     const empties = 64 - popcount(pl) - popcount(ph) - popcount(ol) - popcount(oh);
     // Reading to the end of the game: solve it exactly instead.
     if (depth >= empties) return this.solveRoot(pl, ph, ol, oh, alpha, beta, empties, ply);
+    // A side with no discs left: the game is over, whatever the depth.
+    if (!((pl | ph) && (ol | oh))) return finalScore(pl, ph, ol, oh);
     if (depth <= 0) return this.evalInt(ply, color, pl, ph, ol, oh);
     if (depth === 1) return this.search1(pl, ph, ol, oh, color, alpha, beta, ply, passed);
 
@@ -293,7 +295,9 @@ export class Search {
       const fl = R.lo, fh = R.hi;
       if (this.weights) this.updateFeatures(ply, color, sq, fl, fh);
       this.nodes++;
-      const v = -this.evalInt(ply + 1, 3 - color, ol & ~fl, oh & ~fh, pl | fl | (sq < 32 ? 1 << sq : 0), ph | fh | (sq >= 32 ? 1 << (sq - 32) : 0));
+      const xl = ol & ~fl, xh = oh & ~fh, nl = pl | fl | (sq < 32 ? 1 << sq : 0), nh = ph | fh | (sq >= 32 ? 1 << (sq - 32) : 0);
+      // Wiping out the opponent ends the game: the final score, not an evaluation.
+      const v = xl | xh ? -this.evalInt(ply + 1, 3 - color, xl, xh, nl, nh) : finalScore(nl, nh, 0, 0);
       if (v > best) { best = v; if (v >= beta) break; }
     }
     return best;

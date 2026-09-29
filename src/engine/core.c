@@ -486,7 +486,9 @@ static int search1(u64 P, u64 O, int color, int alpha, int beta, int ply, int pa
     u64 f = flips(sq, P, O);
     updateFeatures(ply, color, sq, f);
     nodes++;
-    int v = -evalInt(ply + 1, 3 - color, O & ~f, P | f | (1ULL << sq));
+    const u64 no = O & ~f, np = P | f | (1ULL << sq);
+    // Wiping out the opponent ends the game: the final score, not an evaluation.
+    int v = no ? -evalInt(ply + 1, 3 - color, no, np) : finalScore(np, 0);
     if (v > best) { best = v; if (v >= beta) break; }
   }
   return best;
@@ -500,6 +502,8 @@ static int pvs(u64 P, u64 O, int color, int depth, int alpha, int beta, int ply,
   if (aborted) return 0;
   const int empties = 64 - popcount(P | O);
   if (depth >= empties) return solveRoot(P, O, alpha, beta, empties);
+  // A side with no discs left: the game is over, whatever the depth.
+  if (!(P && O)) return finalScore(P, O);
   if (depth <= 0) return evalInt(ply, color, P, O);
   if (depth == 1) return search1(P, O, color, alpha, beta, ply, passed);
 

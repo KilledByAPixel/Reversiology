@@ -45,3 +45,14 @@ test('the WebAssembly search stops on time', () => {
   assert.ok(Date.now() - t0 < 1500);
   assert.ok(r.depth >= 2 && r.moves.length);
 });
+
+test('a wipeout at the search horizon scores as the end of the game', () => {
+  // Black's c1 takes White's last disc with 61 squares still empty.
+  const pos = positionFromString('XO' + '-'.repeat(62), BLACK);
+  for (const js of [false, true]) {
+    for (const depth of [1, 2, 3]) {
+      const r = new Engine(W, { js }).run(pos, { depth, exact: 0, all: true });
+      assert.equal(r.moves[0].score, 64, `${js ? 'JavaScript' : 'WebAssembly'} depth ${depth}`);
+    }
+  }
+});
