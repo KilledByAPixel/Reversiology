@@ -125,6 +125,7 @@ function pvDiscs(color, moves) {
 // ------------------------------------------------------------------ game flow
 
 function newGame() {
+  resetCoachHeight();
   cancelAI();
   stopCoach();
   game = new Game({ handicap: settings.handicap, handicapColor: settings.human || BLACK });
@@ -667,6 +668,22 @@ function renderCoach() {
         '<p class="muted small">Numbered discs show how they expect it to continue. Press <kbd>O</kbd> again to hide.</p>'));
     }
   }
+  holdCoachHeight();
+}
+
+// The Coach card only grows during a game: its text changes with every move,
+// and a card that shrank and grew back would make everything below it jump.
+// A new game or puzzle, or a change of window width, starts it afresh.
+let coachHeight = 0;
+function holdCoachHeight() {
+  const card = $('.coach');
+  coachHeight = Math.max(coachHeight, card.offsetHeight);
+  card.style.minHeight = `${coachHeight}px`;
+}
+addEventListener('resize', () => { if (coachHeight) { resetCoachHeight(); renderCoach(); } });
+function resetCoachHeight() {
+  coachHeight = 0;
+  $('.coach').style.minHeight = '';
 }
 
 function renderReview() {
@@ -867,6 +884,7 @@ function renderStatus() {
 // ------------------------------------------------------------------ puzzles
 
 function enterPuzzles() {
+  resetCoachHeight();
   let i = nextPuzzle(puzzleProgress.solved, puzzleProgress.difficulty, puzzleProgress.last);
   if (i == null) { puzzleProgress.difficulty = 0; i = nextPuzzle(puzzleProgress.solved, 0, -1); }
   if (i == null) { flash('No puzzles here yet.'); return; }
@@ -878,6 +896,7 @@ function enterPuzzles() {
 }
 
 function startPuzzle(i) {
+  resetCoachHeight();
   if (i == null) { flash('No puzzles at that difficulty.'); return; }
   cancelAI();
   stopCoach();
@@ -936,6 +955,7 @@ function playOutPuzzle() {
 }
 
 function leavePuzzles() {
+  resetCoachHeight();
   if (!puzzle) return;
   cancelAI();
   stopCoach();
@@ -1066,6 +1086,7 @@ function importGame(text) {
     // Loading a game leaves the puzzles: the loaded game replaces the one they'd return to.
     puzzle = null; hintOn = false;
     game = g;
+    resetCoachHeight();
     settings.human = 0;
     resigned = 0; better = null; threat = null; overShown = null;
     syncOptions();
