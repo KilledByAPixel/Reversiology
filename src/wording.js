@@ -237,6 +237,13 @@ export function describeNote(facts, ctx) {
 
 // Live notes about the position for the side to move: corners on offer,
 // or no move at all.
+// Find it yourself: the explanation lines minus any that would give the answer
+// away, i.e. that name one of `squares` ("c4 takes the corner").
+export function hideAnswer(lines, squares) {
+  const names = squares.map(p => new RegExp(`\\b${sqName(p)}\\b`, 'i'));
+  return lines.filter(t => !names.some(re => re.test(t)));
+}
+
 export function positionNotes(board, names) {
   const me = board.toPlay, moves = board.legalMoves(me), out = [];
   if (board.isOver) return out;

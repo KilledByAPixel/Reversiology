@@ -14,7 +14,8 @@ coach grades every move, explains why, and shows you what it would have played.
 - **A coach for every move.** A grade and a plain reason: a corner given
   away, a risky square, too many moves left for your opponent. It talks to
   beginners about corners and safe discs, and to stronger players about
-  mobility, frontier and parity.
+  mobility, frontier and parity. Or have it keep its move to itself after a
+  mistake, so you can find the better one yourself.
 - **Review and experiment.** Take back any move, try other lines, and see
   your mistakes marked on a graph of the game.
 - **Puzzles.** 156 positions from real games where one move is clearly best,

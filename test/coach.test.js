@@ -159,3 +159,10 @@ test('wedges: playing one, and leaving a gap for one', async () => {
   const lines = describe(facts, { level: 'improving', mover: BLACK, you: BLACK, shown: { flagged: false } });
   assert.ok(lines.some(l => /wedge/i.test(l)), lines.join(' | '));
 });
+
+test('find it yourself: lines that name the answer are held back', async () => {
+  const { hideAnswer } = await import('../src/wording.js');
+  const lines = ['<b>c4</b> would have taken the corner.', 'This gives White the a1 corner.', 'Otherwise Black plays C4 next.'];
+  assert.deepEqual(hideAnswer(lines, [parseSq('c4')]), ['This gives White the a1 corner.']);
+  assert.deepEqual(hideAnswer(lines, []), lines);
+});

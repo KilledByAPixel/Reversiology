@@ -6,7 +6,7 @@ import { Engine, EnginePool } from './engine-client.js';
 import { LEVELS, levelSearch, pickLevelMove } from './levels.js';
 import { annotate, gradeMove, gradesMove, GRADES, describeScore, hintList, openingOf, bookMoves } from './coach.js';
 import { nodeFacts, moveFacts } from './explain.js';
-import { COACH_FOR, resolveLevel, gradeLabel, levelGrade, verdict, verdictSaysResult, describe, describeNote, positionNotes } from './wording.js';
+import { COACH_FOR, resolveLevel, gradeLabel, levelGrade, verdict, verdictSaysResult, describe, describeNote, positionNotes, hideAnswer } from './wording.js';
 import { stableDiscs, frontierDiscs, dangerSquares, emptyRegions } from './concepts.js';
 import { BoardView } from './view.js';
 import { linkPoints, pointReadout, movePhrase, plainText, positionPhrase, resultPhrase } from './access.js';
@@ -48,6 +48,7 @@ const DEFAULTS = {
   coach: true,
   coachDepth: 'normal',
   gradeAI: false,
+  findYourself: false,        // after a mistake, the coach keeps its move to itself until asked
   coachFor: 'auto',
   speak: false,
   sound: true,
@@ -158,6 +159,7 @@ function playMove(move, { human = false, news = '' } = {}) {
   const r = game.check(move);
   if (!r.ok) { flash(reasonText(r.reason), 'bad'); playSound('illegal'); return false; }
   if (human) hush(); // a new move: they're done listening
+  const regrade = !!(game.current.children.find(c => c.move === move) || {}).grade;
   const node = game.play(move);
   if (news) flash(news);
   else {
@@ -170,6 +172,7 @@ function playMove(move, { human = false, news = '' } = {}) {
   else discSound(node.flipped.length, !!aiColor() && node.color === aiColor(), CORNERS.includes(move));
   if (game.isOver()) finalRead(node);
   tryGrade(node);
+  if (regrade) { node.announced = false; announceGrade(node); } // the same move again after Try again
   if (puzzle && human && puzzle.status === 'solving' && node.parent === game.root) puzzleAnswered(move);
   afterChange();
   if (game.isOver()) gameOver();
@@ -226,6 +229,8 @@ function resign() {
   if (resigned) return;
   cancelAI();
   resigned = settings.human;
+  // The coach's moves show once you've resigned: taking it back doesn't hide them again.
+  for (const n of game.line()) if (n.grade && n.color === settings.human) { n.revealed = true; n.parent.helped = true; }
   playSound('lose');
   flash('You resigned. No shame in that: step back through the game to see where it turned.');
   afterChange();
@@ -272,6 +277,7 @@ async function aiMove(force = false, best = false) {
   const token = ++aiToken;
   const lv = level();
   aiNode = node; aiBest = best;
+  if (best) node.helped = true; // the "AI move" button plays the coach's move: not found by the player
   render();
   const t0 = performance.now();
   let move;
@@ -397,8 +403,10 @@ function announceGrade(node) {
 // What the coach says about a graded move, as plain text ("Coach: Mistake. …").
 function gradeSpeech(node) {
   const level = coachLevel(), facts = factsFor(node).filter(f => f.type !== 'opening'), shown = levelGrade(node.grade, level, facts);
-  const lines = describe(facts, { level, mover: node.color, you: settings.human, shown, resultSaid: verdictSaysResult(node.grade, level, shown) });
-  return plainText(`Coach: ${shown.label}. ${verdict(node.grade, level, shown)} ${lines.join(' ')}`);
+  const all = describe(facts, { level, mover: node.color, you: settings.human, shown, resultSaid: verdictSaysResult(node.grade, level, shown) });
+  const hide = findIt(node, shown), lines = hide ? hideAnswer(all, answerSquares(node)) : all;
+  const said = hide ? 'There was something better here. Can you find it?' : `${found(node, shown) ? 'You found it! ' : ''}${verdict(node.grade, level, shown)}`;
+  return plainText(`Coach: ${shown.label}. ${said} ${lines.join(' ')}`);
 }
 
 // What the coach knows about node's move so far (explain.js).
@@ -431,14 +439,14 @@ function gameOver() {
 
 // ------------------------------------------------------------------ navigation
 
-function goTo(node) {
+function goTo(node, { verdict: sayVerdict = true } = {}) {
   cancelAI();
   better = null; hintOn = false; threat = null;
   locatePt = null; // the button it came from may be rebuilt without a focusout
   game.goTo(node);
   save(); render(); scheduleCoach();
   // Stepping through a game: the move, and the coach's verdict on it when there is one.
-  const graded = node.move !== PASS && node.grade && isGraded(node) && node.analysisDone && settings.show.feedback && puzzleSpoilersOk();
+  const graded = sayVerdict && node.move !== PASS && node.grade && isGraded(node) && node.analysisDone && settings.show.feedback && puzzleSpoilersOk();
   announce(positionPhrase(node.depth, node.color, node.move) + (graded ? ` ${gradeSpeech(node)}` : ''));
   aiMove(); // back at the newest position with the AI to move (only fires on a leaf)
 }
@@ -454,7 +462,8 @@ function nav(where) {
 function showBetter(node) {
   const g = node.grade, parent = node.parent;
   if (!g || !parent) return;
-  goTo(parent);
+  parent.helped = true;
+  goTo(parent, { verdict: false });
   const m = parent.analysis && parent.analysis.moves.find(x => x.move === g.bestMove);
   better = { node: parent, move: g.bestMove, pv: pvDiscs(parent.board.toPlay, [g.bestMove, ...((m && m.pv) || [])]) };
   const canClick = !resigned && (!aiColor() || parent.board.toPlay !== aiColor());
@@ -466,7 +475,8 @@ function tryInstead(node) {
   const g = node.grade;
   if (!g || !node.parent) return;
   if (resigned) { flash('You resigned. Take back to keep playing, or start a new game.'); return; }
-  goTo(node.parent);
+  node.parent.helped = true;
+  goTo(node.parent, { verdict: false });
   playMove(g.bestMove, { human: true });
 }
 
@@ -535,6 +545,7 @@ function renderBoard() {
   if (sh.parity && !over && b.empties <= 24) s.regions = emptyRegions(b);
   if (sh.numbers) s.numbers = moveNumbers(node);
   const hintsVisible = an && (hintOn || sh.hints) && !over && !aiToMove && puzzleSpoilersOk();
+  if (hintsVisible) node.helped = true; // the best moves were on show here: a good move isn't "found" alone
   if (hintsVisible) {
     s.hints = hintList(an);
     const m = hoverPt !== null && an.moves.find(x => x.move === hoverPt);
@@ -622,6 +633,8 @@ function renderCoach() {
     if (!target) return;
     if (btn.dataset.act === 'show') showBetter(target);
     if (btn.dataset.act === 'try') tryInstead(target);
+    if (btn.dataset.act === 'retry') retry(target);
+    if (btn.dataset.act === 'reveal') reveal(target);
   };
 
   // Live notes about the position on the board.
@@ -709,13 +722,49 @@ function moveEntry(node) {
   else {
     ctx.shown = levelGrade(g, level, facts);
     ctx.resultSaid = verdictSaysResult(g, level, ctx.shown);
-    html = head(`<span class="pill" style="--pill:${ctx.shown.color}">${ctx.shown.label}</span>`) + `<p>${verdict(g, level, ctx.shown)}</p>`;
+    const pill = `<span class="pill" style="--pill:${ctx.shown.color}">${ctx.shown.label}</span>`;
+    if (findIt(node, ctx.shown)) {
+      html = head(pill) + '<p>There was something better here. Can you find it?</p>' +
+        `<div class="fb-actions"><button data-act="retry" data-id="${node.id}">Try again</button><button data-act="reveal" data-id="${node.id}">Show answer</button></div>`;
+      return wrap(html + list(hideAnswer(describe(facts, ctx), answerSquares(node))));
+    }
+    html = head(pill) + `<p>${found(node, ctx.shown) ? '<b>You found it!</b> ' : ''}${verdict(g, level, ctx.shown)}</p>`;
     if (g.grade !== 'best' && g.bestMove !== PASS && g.ptLoss > 0) {
       html += `<div class="fb-actions"><button data-act="show" data-id="${node.id}" data-pt="${g.bestMove}">Show ${sqName(g.bestMove)}</button>` +
         `<button data-act="try" data-id="${node.id}" data-pt="${g.bestMove}">Try ${sqName(g.bestMove)} instead</button></div>`;
     }
   }
   return wrap(html + list(describe(facts, ctx)));
+}
+
+// Find it yourself: the player's Mistake or Blunder against the AI, with the
+// coach's move hidden until they ask (Show answer) or find a good move.
+const findIt = (node, shown) => settings.findYourself && !!settings.human && node.color === settings.human
+  && !node.revealed && !resigned && !puzzle && (shown.key === 'mistake' || shown.key === 'blunder');
+// The coach's move, and any move just as good: what the coach mustn't name.
+function answerSquares(node) {
+  const g = node.grade, an = node.parent.analysis;
+  const top = an && an.moves.find(m => m.move === g.bestMove);
+  const equal = top && !top.bound ? an.moves.filter(m => m.score === top.score && !m.bound).map(m => m.move) : [];
+  return [...new Set([g.bestMove, ...equal])].filter(q => q !== PASS);
+}
+// A Good or Best move played from a position the player went back to with Try
+// again, without being shown the answer (Show answer, Try instead, a hint or
+// the "AI move" button all mark the position as helped).
+const found = (node, shown) => !!(node.parent && node.parent.retry && !node.parent.helped) && (shown.key === 'best' || shown.key === 'good');
+
+function retry(node) {
+  node.parent.retry = true;
+  goTo(node.parent, { verdict: false });
+  flash('Find a better move here.');
+}
+
+function reveal(node) {
+  node.revealed = true;
+  node.parent.helped = true;
+  render();
+  const level = coachLevel(), shown = levelGrade(node.grade, level, factsFor(node));
+  announce(plainText(`Coach: ${verdict(node.grade, level, shown)}`));
 }
 
 // Suggests a better-matched opponent after a lopsided game. margin is black-minus-white.
@@ -974,6 +1023,7 @@ function load() {
     settings.level = Math.min(LEVELS.length - 1, Math.max(0, settings.level | 0));
     if (!COACH_DEPTHS[settings.coachDepth]) settings.coachDepth = DEFAULTS.coachDepth;
     settings.gradeAI = !!settings.gradeAI;
+    settings.findYourself = !!settings.findYourself;
     settings.speak = !!settings.speak;
     if (!COACH_FOR.some(o => o.key === settings.coachFor)) settings.coachFor = DEFAULTS.coachFor;
     if (![0, BLACK, WHITE].includes(settings.human)) settings.human = DEFAULTS.human;
@@ -1053,6 +1103,7 @@ function syncOptions() {
   $('#optCoach').value = settings.coachDepth;
   $('#optCoachFor').value = settings.coachFor;
   $('#optGradeAI').checked = settings.gradeAI;
+  $('#optFindYourself').checked = settings.findYourself;
   $('#optSpeak').checked = settings.speak;
   $('#optSound').checked = settings.sound;
   $('#toggles').querySelectorAll('input').forEach(i => { i.checked = !!settings.show[i.dataset.key]; });
@@ -1083,6 +1134,7 @@ function setupControls() {
     for (const n of game.line()) tryGrade(n);
     save(); render(); scheduleCoach();
   };
+  $('#optFindYourself').onchange = e => { settings.findYourself = e.target.checked; save(); render(); };
   $('#optSound').onchange = e => { settings.sound = e.target.checked; setSoundEnabled(settings.sound); save(); if (settings.sound) playSound('disc'); };
   $('#optSpeak').onchange = e => { settings.speak = e.target.checked; setSpeech(settings.speak); save(); announce(settings.speak ? 'Speech on.' : 'Speech off.'); };
   if (!speechAvailable()) { $('#optSpeak').disabled = true; $('#speakNote').hidden = false; }
