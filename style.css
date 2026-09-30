@@ -179,6 +179,11 @@ button.pass-btn { display: none; }
 .review { margin-top: 10px; display: grid; gap: 7px; font-size: 13px; }
 .rv-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .rv-row .pill { font-size: 11px; padding: 1px 7px; }
+.key-moments h3 { font-size: 14px; margin: 12px 0 4px; }
+.review .key-moments h3 { font-size: 13px; margin: 4px 0 2px; }
+.key-moments ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.key-moments li .chip { margin-right: 2px; }
+.key-moments p { margin: 4px 0; }
 .rv-worst { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
 .graph { height: 110px; cursor: pointer; }
 .graph-svg { width: 100%; height: 100%; display: block; border-radius: 6px; }

@@ -18,6 +18,16 @@ export const LEVELS = [
   { name: 'Phoenix', blurb: 'Extra hard: reads 22 moves ahead and plays the last 22 perfectly.', depth: 22, exact: 22, temp: 0, miss: 0, probcut: 1.5, maxTime: 10000 },
 ];
 
+// The level ladder: after a game against the AI, one level up for a win
+// (outcome 1), one down for a loss (-1), none for a draw (0). step says what
+// happened: 'up', 'down', 'same', or 'top' / 'bottom' when the ladder has no
+// further to go.
+export function nextLevel(level, outcome) {
+  if (outcome > 0) return level < LEVELS.length - 1 ? { level: level + 1, step: 'up' } : { level, step: 'top' };
+  if (outcome < 0) return level > 0 ? { level: level - 1, step: 'down' } : { level, step: 'bottom' };
+  return { level, step: 'same' };
+}
+
 // The engine options for a level's move.
 export const levelSearch = level => ({
   depth: level.depth, exact: level.exact, all: level.temp > 0, probcut: level.probcut || 0,

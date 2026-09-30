@@ -237,6 +237,15 @@ export function describeNote(facts, ctx) {
 
 // Live notes about the position for the side to move: corners on offer,
 // or no move at all.
+// Of describe's lines for a flagged move, the ones that say what went wrong:
+// those the move's faults add (a corner given away, a risky square, too many
+// moves left for the opponent, ...).
+const FAULTS = new Set(['givesCorner', 'xsquare', 'csquare', 'allowsWedge', 'mobility', 'flips', 'parity', 'cornerSoon', 'threat', 'vsBest']);
+export function mistakeLines(facts, ctx) {
+  const plain = new Set(describe(facts.filter(f => !FAULTS.has(f.type)), ctx));
+  return describe(facts, ctx).filter(t => !plain.has(t));
+}
+
 // Find it yourself: the explanation lines minus any that would give the answer
 // away, i.e. that name one of `squares` ("c4 takes the corner").
 export function hideAnswer(lines, squares) {

@@ -166,3 +166,24 @@ test('find it yourself: lines that name the answer are held back', async () => {
   assert.deepEqual(hideAnswer(lines, [parseSq('c4')]), ['This gives White the a1 corner.']);
   assert.deepEqual(hideAnswer(lines, []), lines);
 });
+
+test('the level ladder: a win moves up, a loss down, a draw stays', async () => {
+  const { nextLevel, LEVELS } = await import('../src/levels.js');
+  assert.deepEqual(nextLevel(3, 1), { level: 4, step: 'up' });
+  assert.deepEqual(nextLevel(3, -1), { level: 2, step: 'down' });
+  assert.deepEqual(nextLevel(3, 0), { level: 3, step: 'same' });
+  assert.deepEqual(nextLevel(LEVELS.length - 1, 1), { level: LEVELS.length - 1, step: 'top' });
+  assert.deepEqual(nextLevel(0, -1), { level: 0, step: 'bottom' });
+});
+
+test('key moments: the biggest mistakes, capped, a few moves apart, in move order', async () => {
+  const { keyMoments } = await import('../src/coach.js');
+  const picks = keyMoments([
+    { depth: 10, ptLoss: 8 }, { depth: 12, ptLoss: 30 }, { depth: 13, ptLoss: 25 },
+    { depth: 30, ptLoss: 6 }, { depth: 40, ptLoss: 12 }, { depth: 50, ptLoss: 4 },
+  ]);
+  assert.deepEqual(picks.map(p => p.depth), [12, 30, 40], 'one per fight: 10 and 13 are too close to 12');
+  assert.deepEqual(picks.map(p => p.turning), [true, false, false]);
+  assert.equal(keyMoments([]).length, 0);
+  assert.equal(keyMoments([{ depth: 5, ptLoss: 9 }])[0].turning, false, 'a single moment is no turning point');
+});

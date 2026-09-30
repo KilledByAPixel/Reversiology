@@ -3,10 +3,10 @@
 import { BLACK, WHITE, EMPTY, PASS, CORNERS, sqName, parseSq } from './board.js';
 import { Game, reasonText, colorName } from './game.js';
 import { Engine, EnginePool } from './engine-client.js';
-import { LEVELS, levelSearch, pickLevelMove } from './levels.js';
-import { annotate, gradeMove, gradesMove, GRADES, describeScore, hintList, openingOf, bookMoves } from './coach.js';
+import { LEVELS, levelSearch, pickLevelMove, nextLevel } from './levels.js';
+import { annotate, gradeMove, gradesMove, GRADES, describeScore, hintList, openingOf, bookMoves, keyMoments } from './coach.js';
 import { nodeFacts, moveFacts } from './explain.js';
-import { COACH_FOR, resolveLevel, gradeLabel, levelGrade, verdict, verdictSaysResult, describe, describeNote, positionNotes, hideAnswer } from './wording.js';
+import { COACH_FOR, resolveLevel, gradeLabel, levelGrade, verdict, verdictSaysResult, describe, describeNote, positionNotes, hideAnswer, mistakeLines } from './wording.js';
 import { stableDiscs, frontierDiscs, dangerSquares, emptyRegions } from './concepts.js';
 import { BoardView } from './view.js';
 import { linkPoints, pointReadout, movePhrase, plainText, positionPhrase, resultPhrase } from './access.js';
@@ -49,6 +49,7 @@ const DEFAULTS = {
   coachDepth: 'normal',
   gradeAI: false,
   findYourself: false,        // after a mistake, the coach keeps its move to itself until asked
+  ladder: true,               // after each game against the AI, move its level up for a win, down for a loss
   coachFor: 'auto',
   speak: false,
   sound: true,
@@ -105,6 +106,7 @@ const aiLabel = () => `AI (${level().name})`;
 const who = c => !settings.human ? colorName(c) : c === settings.human ? 'You' : 'AI';
 const whose = c => !settings.human ? `${colorName(c)}'s` : c === settings.human ? 'Your' : 'AI\'s';
 const plural = (n, w) => `${n} ${n === 1 ? w : w + 's'}`;
+const capital = s => s[0].toUpperCase() + s.slice(1);
 const coachLevel = () => resolveLevel(settings.coachFor, settings.level);
 const coachOpts = () => ({ ...COACH_DEPTHS[settings.coachDepth] || COACH_DEPTHS.normal, all: true, minDepth: 4 });
 
@@ -243,6 +245,8 @@ function resign() {
   for (const n of game.line()) if (n.grade && n.color === settings.human) { n.revealed = true; n.parent.helped = true; }
   playSound('lose');
   flash('You resigned. No shame in that: step back through the game to see where it turned.');
+  const next = ladderSentence();
+  if (next) announce(next);
   afterChange();
 }
 
@@ -442,7 +446,7 @@ function gameOver() {
   if (overShown === node) return;
   overShown = node;
   const s = game.score(node);
-  announce(`Game over. ${resultPhrase(s)}`);
+  announce(`Game over. ${resultPhrase(s)} ${ladderSentence()}`.trim());
   playSound(settings.human && s.winner !== settings.human ? 'lose' : 'win');
   render();
   $('#scorePanel').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); // stacked below the board on phones
@@ -551,7 +555,7 @@ function render() {
   renderPuzzle();
   renderNav();
   renderStatus();
-  renderGraph($('#graph'), game.line(), game.current, goTo, graphMark);
+  renderGraph($('#graph'), game.line(), game.current, goTo, graphMark, { dotsOnScore: game.handicap > 0 });
   renderReview();
 }
 
@@ -765,10 +769,10 @@ function renderReview() {
   };
   const worst = [...stats[BLACK].worst, ...stats[WHITE].worst].sort((a, b) => b.grade.ptLoss - a.grade.ptLoss).slice(0, 5);
   const chip = n => `<button class="chip" data-id="${n.id}" data-pt="${n.move}" title="Jump to this move">#${n.depth} ${sqName(n.move)}${level === 'beginner' ? '' : ` −${Math.round(n.grade.ptLoss)}`}</button>`;
-  setHTML(el, linkPoints(row(BLACK) + row(WHITE) + (worst.length ? `<div class="rv-worst"><span class="muted">Biggest:</span>${worst.map(chip).join('')}</div>` : '')));
+  setHTML(el, linkPoints(row(BLACK) + row(WHITE) + (worst.length ? `<div class="rv-worst"><span class="muted">Biggest:</span>${worst.map(chip).join('')}</div>` : '')) + keyMomentsHtml());
   el.onclick = e => {
     const c = e.target.closest && e.target.closest('[data-id]');
-    const node = c && worst.find(n => n.id === +c.dataset.id);
+    const node = c && game.line().find(n => n.id === +c.dataset.id);
     if (node) goTo(node);
   };
 }
@@ -837,6 +841,72 @@ function reveal(node) {
   announce(plainText(`Coach: ${verdict(node.grade, level, shown)}`));
 }
 
+// After a finished game against the AI, the few of the player's mistakes most
+// worth a look (coach.js keyMoments), as a list of moves to jump to. Each says
+// how big it was and why, without naming the coach's move: that's left to find
+// on the move's own card. '' while there's no finished game.
+function keyMomentsHtml() {
+  if (!settings.coach || gameOutcome() === null) return '';
+  const level = coachLevel();
+  const mine = game.line().filter(n => n.parent && n.move !== PASS && n.color === settings.human && isGraded(n));
+  if (!mine.length) return '';
+  const waiting = mine.filter(n => !n.grade).length;
+  const bad = mine.filter(n => n.grade && ['mistake', 'blunder'].includes(levelGrade(n.grade, level, factsFor(n)).key));
+  const picks = keyMoments(bad.map(n => ({ depth: n.depth, ptLoss: n.grade.ptLoss, node: n })));
+  const item = ({ node: n, turning }) => {
+    const shown = levelGrade(n.grade, level, factsFor(n));
+    const discs = Math.max(1, Math.round(n.grade.ptLoss));
+    const size = level === 'beginner' ? shown.label : `lost about ${plural(discs, 'disc')}`;
+    const why = hideAnswer(mistakeLines(factsFor(n), { level, mover: n.color, you: settings.human, shown }), answerSquares(n))[0];
+    return `<li><button class="chip" data-id="${n.id}" data-pt="${n.move}" title="Jump to this move">Move ${n.depth} · ${sqName(n.move)}</button>` +
+      `${turning ? ' <b>Turning point.</b>' : ''} ${capital(size)}.${why ? ` <span class="muted">${why}</span>` : ''}</li>`;
+  };
+  const body = picks.length ? `<ul>${picks.map(item).join('')}</ul>`
+    : !waiting ? '<p>No big mistakes this game. Nicely played.</p>' : '';
+  const more = waiting ? `<p class="muted">The coach is still grading ${plural(waiting, 'move')}…</p>` : '';
+  return linkPoints(`<div class="key-moments"><h3>Key moments</h3>${body}${more}</div>`);
+}
+
+// The finished game's result for the player: 1 won, -1 lost, 0 drawn, null
+// when there's no finished game against the AI (still playing, study mode, a puzzle).
+function gameOutcome() {
+  if (!settings.human || puzzle) return null;
+  if (resigned) return resigned === settings.human ? -1 : 1;
+  const end = game.line().at(-1);
+  if (!game.isOver(end)) return null;
+  const s = game.score(end);
+  return !s.winner ? 0 : s.winner === settings.human ? 1 : -1;
+}
+
+// The level the next game starts at: one step along the ladder from a finished game.
+function ladderLevel() {
+  const o = settings.ladder ? gameOutcome() : null;
+  return o === null ? settings.level : nextLevel(settings.level, o).level;
+}
+
+// What the ladder does after this game, as a sentence ('' with it off or no finished game).
+function ladderSentence() {
+  const o = settings.ladder ? gameOutcome() : null;
+  if (o === null) return '';
+  const { level: n, step } = nextLevel(settings.level, o);
+  const name = `level ${n + 1} · ${LEVELS[n].name}`;
+  return {
+    up: `Next game: ${name}, one step up.`,
+    down: `Next game: ${name}, one step down.`,
+    same: `Next game: ${name} again.`,
+    top: `You beat ${LEVELS[n].name}, the strongest level!`,
+    bottom: `Next game: ${name} again. Handicap corners (in New game) make it easier still.`,
+  }[step];
+}
+
+// Below the result: where the ladder goes next, or with the ladder off, a
+// better-matched opponent after a lopsided game. margin is black-minus-white.
+function nextGameNote(margin) {
+  if (!settings.ladder) return levelAdvice(margin);
+  const next = ladderSentence();
+  return next ? `<p class="advice">${next}</p>` : '';
+}
+
 // Suggests a better-matched opponent after a lopsided game. margin is black-minus-white.
 function levelAdvice(margin) {
   if (!settings.human) return '';
@@ -856,14 +926,14 @@ function renderScorePanel() {
   if (!over && !resigned) { el.hidden = true; return; }
   el.hidden = false;
   if (resigned) {
-    setHTML(el, `<h2>${colorName(resigned)} resigned</h2><p class="big">${resigned === settings.human ? 'The AI wins this one.' : 'You win!'}</p>${levelAdvice(resigned === BLACK ? -99 : 99)}
+    setHTML(el, `<h2>${colorName(resigned)} resigned</h2><p class="big">${resigned === settings.human ? 'The AI wins this one.' : 'You win!'}</p>${nextGameNote(resigned === BLACK ? -99 : 99)}${keyMomentsHtml()}
       <div class="fb-actions"><button data-act="new" class="primary">New game</button></div>`);
   } else {
     const s = game.score(node);
     const winText = !s.winner ? 'A draw!' : !settings.human ? `${colorName(s.winner)} wins.` :
       s.winner === settings.human ? 'You win! 🎉' : 'The AI wins this one.';
     setHTML(el, `<h2>Game over · ${s.final[0]}–${s.final[1]}</h2>
-      <p class="big">${winText}</p>${levelAdvice(s.margin)}
+      <p class="big">${winText}</p>${nextGameNote(s.margin)}${keyMomentsHtml()}
       <table class="score-table">
         <tr><th></th><th>Black</th><th>White</th></tr>
         <tr><td>Discs</td><td>${s.black}</td><td>${s.white}</td></tr>${s.empty ? `
@@ -874,6 +944,9 @@ function renderScorePanel() {
   }
   el.onclick = e => {
     const act = e.target.dataset && e.target.dataset.act;
+    const moment = !act && e.target.closest && e.target.closest('[data-id]');
+    const node = moment && game.line().find(n => n.id === +moment.dataset.id);
+    if (node) { goTo(node); return; }
     if (act === 'review') { goTo(game.root); flash('Review: step through with ◀ ▶ or click the graph. Dots mark mistakes.'); }
     if (act === 'new') openNewGame();
   };
@@ -1101,6 +1174,7 @@ function load() {
     if (!COACH_DEPTHS[settings.coachDepth]) settings.coachDepth = DEFAULTS.coachDepth;
     settings.gradeAI = !!settings.gradeAI;
     settings.findYourself = !!settings.findYourself;
+    settings.ladder = !!settings.ladder;
     settings.speak = !!settings.speak;
     if (!COACH_FOR.some(o => o.key === settings.coachFor)) settings.coachFor = DEFAULTS.coachFor;
     if (![0, BLACK, WHITE].includes(settings.human)) settings.human = DEFAULTS.human;
@@ -1158,7 +1232,7 @@ function importGame(text) {
 function openNewGame() {
   const dlg = $('#newGameDlg'), f = dlg.querySelector('form');
   f.elements.color.value = String(settings.human);
-  f.elements.level.value = String(settings.level);
+  f.elements.level.value = String(ladderLevel()); // a finished game moves the ladder
   f.elements.handicap.value = String(settings.handicap);
   dlg.returnValue = ''; // Esc keeps the previous returnValue, which would re-run newGame()
   dlg.showModal();
@@ -1184,6 +1258,7 @@ function syncOptions() {
   $('#optCoachFor').value = settings.coachFor;
   $('#optGradeAI').checked = settings.gradeAI;
   $('#optFindYourself').checked = settings.findYourself;
+  $('#optLadder').checked = settings.ladder;
   $('#optSpeak').checked = settings.speak;
   $('#optSound').checked = settings.sound;
   $('#toggles').querySelectorAll('input').forEach(i => { i.checked = !!settings.show[i.dataset.key]; });
@@ -1215,6 +1290,7 @@ function setupControls() {
     save(); render(); scheduleCoach();
   };
   $('#optFindYourself').onchange = e => { settings.findYourself = e.target.checked; save(); render(); };
+  $('#optLadder').onchange = e => { settings.ladder = e.target.checked; save(); render(); };
   $('#optSound').onchange = e => { settings.sound = e.target.checked; setSoundEnabled(settings.sound); save(); if (settings.sound) playSound('disc'); };
   $('#optSpeak').onchange = e => { settings.speak = e.target.checked; setSpeech(settings.speak); save(); announce(settings.speak ? 'Speech on.' : 'Speech off.'); };
   if (!speechAvailable()) { $('#optSpeak').disabled = true; $('#speakNote').hidden = false; }

@@ -10,14 +10,16 @@ a coach grades every move, explains why, and shows you what it would have played
 ## What you get
 
 - **Play at your level.** Nine levels, from nearly random to as strong as
-  the best Reversi programs.
+  the best Reversi programs. Win and your next game is a level up; lose and
+  it steps down.
 - **A coach for every move.** A grade and a plain reason: a corner given
   away, a risky square, too many moves left for your opponent. It talks to
   beginners about corners and safe discs, and to stronger players about
   mobility, frontier and parity. Or have it keep its move to itself after a
   mistake, so you can find the better one yourself.
 - **Review and experiment.** Take back any move, try other lines, and see
-  your mistakes marked on a graph of the game.
+  your mistakes marked on a graph of the game. After each game, **Key
+  moments** picks the two or three mistakes most worth a look.
 - **Puzzles.** 156 positions from real games where one move is clearly best,
   from easy to hard, each with a hint and an explanation.
 - **Perfect endgames.** In the last moves the coach works the game out exactly

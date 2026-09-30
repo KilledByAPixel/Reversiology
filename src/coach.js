@@ -150,3 +150,19 @@ export function bookMoves(node) {
 }
 
 export { sqName };
+
+// The moments worth reviewing after a game: of the player's flagged moves
+// ({ depth, ptLoss }), the few that lost the most. The loss is capped so one
+// collapse doesn't crowd out the rest, and picks are `gap` plies apart, so one
+// fight gives one moment. Returned in move order; with more than one, the
+// biggest is the turning point.
+export function keyMoments(moves, { max = 3, gap = 6, cap = 20 } = {}) {
+  const scored = moves.map(m => ({ m, score: Math.min(m.ptLoss, cap) })).sort((a, b) => b.score - a.score);
+  const picked = [];
+  for (const s of scored) {
+    if (picked.length >= max) break;
+    if (picked.every(p => Math.abs(p.m.depth - s.m.depth) >= gap)) picked.push(s);
+  }
+  const top = picked[0];
+  return picked.sort((a, b) => a.m.depth - b.m.depth).map(p => ({ ...p.m, turning: picked.length > 1 && p === top }));
+}
