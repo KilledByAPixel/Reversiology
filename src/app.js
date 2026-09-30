@@ -64,6 +64,10 @@ let hintOn = false;
 let warningsSaid = null;     // the position and notes last read out
 let better = null;           // { node, move, pv } — a puzzle's answer shown on node's board
 let peek = null;             // { node, move, pv } — the coach's move previewed from a Try button (hover or focus)
+let armed = null;            // the graded move whose Try was tapped once: its preview stays, the button says Play
+let swallowClick = false;    // a board click that only ended an armed preview
+let lastPointer = '';        // the last pointer used (mouse, touch, pen), or '' after a key
+let ending = false;          // ending a preview: the redraw's focus restore mustn't start it again
 let flashMsg = null, flashTimer = 0;
 let aiNode = null, aiToken = 0;
 let aiBest = false;          // the current AI search is the "AI move" button's full-strength move
@@ -130,7 +134,7 @@ function newGame() {
   cancelAI();
   stopCoach();
   game = new Game({ handicap: settings.handicap, handicapColor: settings.human || BLACK });
-  resigned = 0; better = null; peek = null; hintOn = false; threat = null; overShown = null;
+  resigned = 0; better = null; peek = null; armed = null; hintOn = false; threat = null; overShown = null;
   flashMsg = null;
   afterChange();
 }
@@ -171,7 +175,7 @@ function playMove(move, { human = false, news = '' } = {}) {
     const note = isGraded(node) ? [] : describeNote(factsFor(node), { mover: node.color, you: settings.human });
     announce([movePhrase(who(node.color), move, node.flipped.length), ...note].join(' '));
   }
-  hintOn = false; better = null; peek = null; threat = null;
+  hintOn = false; better = null; peek = null; armed = null; threat = null;
   if (move === PASS) playSound('pass');
   else discSound(node.flipped.length, !!aiColor() && node.color === aiColor(), CORNERS.includes(move));
   if (game.isOver()) finalRead(node);
@@ -187,6 +191,8 @@ function playMove(move, { human = false, news = '' } = {}) {
 }
 
 function onClick(p) {
+  if (swallowClick) { swallowClick = false; return; }
+  if (armed) { disarm(); return; } // (keyboard) the board only ends the preview
   if (resigned) { flash('You resigned. Take back to keep playing, or start a new game.'); return; }
   if (aiNode) { flash('Hold on, the AI is thinking…'); return; }
   const node = game.current;
@@ -210,7 +216,7 @@ function takeBack() {
   // Nothing to take back at the start: leave the AI's first move alone.
   if (!game.current.parent && !resigned) return;
   cancelAI();
-  better = null; peek = null; hintOn = false; threat = null;
+  better = null; peek = null; armed = null; hintOn = false; threat = null;
   // The first take back after resigning withdraws the resignation.
   if (resigned) { resigned = 0; flash('Resignation withdrawn. Play on!'); afterChange(); return; }
   playSound('undo');
@@ -446,7 +452,7 @@ function gameOver() {
 
 function goTo(node, { verdict: sayVerdict = true } = {}) {
   cancelAI();
-  better = null; peek = null; hintOn = false; threat = null;
+  better = null; peek = null; armed = null; hintOn = false; threat = null;
   locatePt = null; // the button it came from may be rebuilt without a focusout
   game.goTo(node);
   save(); render(); scheduleCoach();
@@ -462,6 +468,14 @@ function nav(where) {
   else if (where === 'prev' && cur.parent) goTo(cur.parent);
   else if (where === 'next') { const n = cur.lastChild || cur.children[0]; if (n) goTo(n); }
   else if (where === 'last') { const line = game.line(); goTo(line[line.length - 1]); }
+}
+
+// Ends a Try preview kept on by a first tap.
+function disarm() {
+  armed = null;
+  peek = null;
+  ending = true;
+  try { render(); } finally { ending = false; }
 }
 
 // Try's preview: the position before the graded move, with the coach's move and
@@ -663,7 +677,16 @@ function renderCoach() {
     const target = entries.find(n => n.id === +btn.dataset.id);
     if (!target) return;
     if (btn.dataset.act === 'back') backToMine(target);
-    if (btn.dataset.act === 'try') tryInstead(target);
+    if (btn.dataset.act === 'try') {
+      // A mouse has already previewed it by pointing, and a keyboard by focusing: one
+      // click plays. A tap (touch has no hover) first keeps the preview on and asks for a second.
+      const touch = (e.pointerType || lastPointer) === 'touch';
+      if (!touch || armed === target) { armed = null; tryInstead(target); return; }
+      armed = target;
+      peekAt(target);
+      renderCoach();
+      announce(`Coach's choice: ${sqName(peek.move)}${peek.pv.length > 1 ? ', then ' + peek.pv.slice(1, 4).map(m => sqName(m.move)).join(', ') : ''}. Press Play to play it.`);
+    }
     if (btn.dataset.act === 'retry') retry(target);
     if (btn.dataset.act === 'reveal') reveal(target);
   };
@@ -777,7 +800,7 @@ function moveEntry(node) {
     }
     html = head(pill) + `<p>${found(node, ctx.shown) ? '<b>You found it!</b> ' : ''}${verdict(g, level, ctx.shown)}</p>`;
     if (g.grade !== 'best' && g.bestMove !== PASS && g.ptLoss > 0) {
-      html += `<div class="fb-actions"><button data-act="try" data-id="${node.id}">Try ${sqName(g.bestMove)} instead</button></div>`;
+      html += `<div class="fb-actions"><button data-act="try" data-id="${node.id}">${armed === node ? `Play ${sqName(g.bestMove)}` : `Try ${sqName(g.bestMove)} instead`}</button></div>`;
     }
   }
   if (node.backTo && !resigned) html += `<div class="fb-actions"><button data-act="back" data-id="${node.id}">Back to my move (${sqName(node.backTo.move)})</button></div>`;
@@ -936,7 +959,7 @@ function startPuzzle(i) {
   const b = p.board;
   game = new Game({ setup: [...b.color].flatMap((c, q) => c ? [[q, c]] : []), toPlay: b.toPlay });
   settings.human = b.toPlay;
-  better = null; peek = null; hintOn = false; threat = null; overShown = null;
+  better = null; peek = null; armed = null; hintOn = false; threat = null; overShown = null;
   afterChange();
   announce(`Puzzle. ${prompt(p)}`);
 }
@@ -956,7 +979,7 @@ function retryPuzzle() {
   game.goTo(game.root);
   puzzle.status = 'solving';
   puzzle.lines = [];
-  better = null; peek = null; threat = null;
+  better = null; peek = null; armed = null; threat = null;
   save(); render(); scheduleCoach();
 }
 
@@ -978,7 +1001,7 @@ function playOutPuzzle() {
   stopCoach();
   puzzle = null;
   settings.human = side;
-  resigned = 0; better = null; peek = null; hintOn = false; threat = null; overShown = null;
+  resigned = 0; better = null; peek = null; armed = null; hintOn = false; threat = null; overShown = null;
   syncOptions();
   flash(`Playing it out against ${aiLabel()}. Take back or start a new game any time.`);
   afterChange();
@@ -993,7 +1016,7 @@ function leavePuzzles() {
   settings.human = puzzle.saved.human;
   resigned = puzzle.saved.resigned;
   puzzle = null;
-  better = null; peek = null; hintOn = false; threat = null;
+  better = null; peek = null; armed = null; hintOn = false; threat = null;
   syncOptions();
   afterChange();
 }
@@ -1118,7 +1141,7 @@ function importGame(text) {
     game = g;
     resetCoachHeight();
     settings.human = 0;
-    resigned = 0; better = null; peek = null; threat = null; overShown = null;
+    resigned = 0; better = null; peek = null; armed = null; threat = null; overShown = null;
     syncOptions();
     flash('Game loaded in study mode (you play both colours). Step through it and watch the coach.');
     afterChange();
@@ -1197,15 +1220,30 @@ function setupControls() {
   const ptOf = el => { const t = el && el.closest ? el.closest('[data-pt]') : null; return t ? +t.dataset.pt : null; };
   // Pointing at (or tabbing to) a Try button previews the coach's move on the board.
   const tryOf = el => el && el.closest ? el.closest('[data-act=try]') : null;
-  const peekFrom = btn => peekAt(btn ? nodeById(+btn.dataset.id) : null);
+  const peekFrom = btn => {
+    const node = btn ? nodeById(+btn.dataset.id) : null;
+    // A preview kept on by a first tap stays until it's ended (a tap elsewhere, a move, Esc):
+    // pointing at or focusing anything else in the panel doesn't change it.
+    if (ending || (armed && node !== armed)) return;
+    peekAt(node);
+  };
   const fbox = $('#feedback');
   fbox.addEventListener('pointerover', e => peekFrom(tryOf(e.target)));
-  fbox.addEventListener('pointerout', e => { if (!tryOf(e.relatedTarget)) peekFrom(null); });
+  fbox.addEventListener('pointerout', e => { if (!armed && !tryOf(e.relatedTarget)) peekFrom(null); });
   fbox.addEventListener('focusin', e => {
     peekFrom(tryOf(e.target));
     if (peek) announce(`Coach's choice: ${sqName(peek.move)}${peek.pv.length > 1 ? ', then ' + peek.pv.slice(1, 4).map(m => sqName(m.move)).join(', ') : ''}.`);
   });
-  fbox.addEventListener('focusout', e => { if (!tryOf(e.relatedTarget)) peekFrom(null); });
+  fbox.addEventListener('focusout', e => { if (!armed && !tryOf(e.relatedTarget)) peekFrom(null); });
+  // A tap outside the armed Try button ends its preview; one on the board plays nothing.
+  document.addEventListener('keydown', () => { lastPointer = ''; }, true);
+  document.addEventListener('pointerdown', e => {
+    lastPointer = e.pointerType;
+    swallowClick = false;
+    if (!armed || (e.target.closest && e.target.closest('[data-act=try]'))) return;
+    disarm();
+    if (e.target.closest && e.target.closest('.board-svg')) swallowClick = true;
+  }, true);
   for (const id of ['#feedback', '#warnings', '#threatBox', '#review']) {
     const box = $(id);
     box.addEventListener('pointerover', e => locate(ptOf(e.target)));
@@ -1254,7 +1292,7 @@ function setupControls() {
     else if (k === 'u' || e.key === 'Backspace') takeBack();
     else if (k === 'h') $('#btnHint').click();
     else if (k === 'o') toggleThreat();
-    else if (e.key === 'Escape') { better = null; peek = null; hintOn = false; threat = null; scout.cancel(); render(); }
+    else if (e.key === 'Escape') { better = null; peek = null; armed = null; hintOn = false; threat = null; scout.cancel(); render(); }
     else if (toggleKey[k]) {
       const key = toggleKey[k];
       settings.show[key] = !settings.show[key];
@@ -1281,6 +1319,8 @@ window.reversi = {
   get game() { return game; },
   get settings() { return settings; },
   get aiThinking() { return !!aiNode; },
+  // The Try preview: on, and kept on by a first tap (armed).
+  get preview() { return { on: !!peek, armed: !!armed }; },
   get coachBusy() { return coach.busy; },
   render, aiMove,
   // Test hooks: play by name ("d3"), take back, start a game with options.
