@@ -9,7 +9,7 @@ export const SOUNDS = {
   // A disc placed on the board: short click.
   disc:    new ZZFXSound([,.2,,,,.03,4,1.4,,,,,,,,,,,,,3e3]),
   // One disc turning over; played once per flipped disc, staggered like a ripple.
-  flip:    new ZZFXSound([.35,.1,1400,,.005,.01,,1.6,,,,,,,,,,.4,,,4e3]),
+  flip:    new ZZFXSound([.7,.3,2800,,.01,.01,4,1.5,,,,,,,,,,.6,,,5e3]),
   // Someone passed: soft low tone.
   pass:    new ZZFXSound([,,440,,.05,,,,,,440,.05,,,,,.1]),
   // Illegal move: short dull buzz.
@@ -17,7 +17,7 @@ export const SOUNDS = {
   // Take back: quick falling blip.
   undo:    new ZZFXSound([.5,,660,,,,1,,20]),
   // A corner taken: a bright ping.
-  corner:  new ZZFXSound([.4,,1046,.01,.03,.2,,1.8,,,,,,,,,,.6,.02]),
+  corner:  new ZZFXSound([.5,,29,.03,,.08,,,27,73,,,,,1.5]),
   // Game over, you won: rising chime.
   win:     new ZZFXSound([,,,.01,,.9,,2,,-40,40,,.1]),
   // Game over, you lost (or a draw): gentle falling tone.
