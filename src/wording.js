@@ -218,7 +218,7 @@ export function describe(facts, ctx) {
       }
     }
   }
-  if (flagged && !out.some(l => !/strongest answer/.test(l)) && !ctx.intent) out.push('The full reason is deeper than a single move: press <b>Show</b> to see how the coach expects play to go.');
+  if (flagged && !out.some(l => !/strongest answer/.test(l)) && !ctx.intent) out.push('The full reason is deeper than a single move: point at <b>Try</b> to see how the coach expects play to go.');
   return out;
 }
 
