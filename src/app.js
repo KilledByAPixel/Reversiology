@@ -927,9 +927,12 @@ function renderStatus() {
   else if (resigned) text = `${colorName(resigned)} resigned.`;
   else if (game.isOver(node)) text = 'Neither player can move. The game is over.';
   else if (node.board.mustPass) text = `${colorName(node.board.toPlay)} has no legal move and must pass.`;
-  else if (!settings.human) text = `${colorName(node.board.toPlay)} to play.`;
-  else if (node.board.toPlay === settings.human) text = `Your move (${colorName(settings.human)}).`;
-  else text = 'Viewing an earlier position. It\'s the AI\'s turn here: press "AI move", or ▶ to step forward.';
+  else {
+    // Short, so the line never wraps further and moves the controls below it.
+    const earlier = node.children.length ? 'Earlier position · ' : '';
+    const c = node.board.toPlay;
+    text = earlier + (!settings.human ? `${colorName(c)} to play.` : c === settings.human ? `Your move (${colorName(c)}).` : `AI's move (${colorName(c)}).`);
+  }
   if (el.textContent !== text) el.textContent = text; // aria-live: don't re-announce on every hover
   el.className = `message ${kind}`;
 }
