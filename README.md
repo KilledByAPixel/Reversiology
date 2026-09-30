@@ -1,7 +1,7 @@
 # Reversiology
 
-Learn Reversi by playing. Take on an AI from beginner to superhuman while a
-coach grades every move, explains why, and shows you what it would have played.
+Learn Reversi by playing. Take on an opponent from beginner to superhuman while
+a coach grades every move, explains why, and shows you what it would have played.
 
 ## ▶ [Play Reversiology in your browser](https://killedbyapixel.github.io/Reversiology/)
 
@@ -9,7 +9,7 @@ coach grades every move, explains why, and shows you what it would have played.
 
 ## What you get
 
-- **Play at your level.** Nine AI levels, from nearly random to as strong as
+- **Play at your level.** Nine levels, from nearly random to as strong as
   the best Reversi programs.
 - **A coach for every move.** A grade and a plain reason: a corner given
   away, a risky square, too many moves left for your opponent. It talks to
@@ -49,7 +49,7 @@ Against [Edax](https://github.com/abulmo/edax-reversi), one of the strongest:
 | 12 | 14 wins, 5 losses, 1 draw |
 
 © 2026 Frank Force. Free and open source under the [GPL-3.0 license](LICENSE).
-The AI uses evaluation weights from [Edax](https://github.com/abulmo/edax-reversi)
+The engine uses evaluation weights from [Edax](https://github.com/abulmo/edax-reversi)
 by Richard Delorme. Opening names come from
 [Egaroucid](https://github.com/Nyanyan/Egaroucid)'s list, after the Othello
 opening list by Robert Gatliff and others.
