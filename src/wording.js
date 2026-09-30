@@ -48,7 +48,13 @@ export const verdictSaysResult = (g, level, shown) => !!g && g.exact && (g.grade
 // The sentence after the grade: how the move compares with the coach's choice.
 export function verdict(g, level, shown) {
   if (g.grade === 'best') {
-    if (!g.exact) return 'Exactly the coach\'s choice.';
+    if (!g.exact) {
+      // How far ahead of the next best move it was: a true reason it was best, straight from the read.
+      if (!(g.gap >= 3)) return 'Exactly the coach\'s choice.';
+      if (level === 'beginner') return 'Exactly the coach\'s choice, and no other move was close.';
+      if (level === 'strong') return `Exactly the coach's choice; the next best is ${g.gap} discs worse.`;
+      return `Exactly the coach's choice. No other move was close: the next best was about ${g.gap} discs worse.`;
+    }
     if (g.result < 0) return level === 'beginner' ? 'The best move here, even if the game can\'t be saved.' : `The best move here: with perfect play it still ${outcome(g.result)}, the least possible.`;
     return level === 'beginner' ? (g.result > 0 ? 'Exactly right: this move wins.' : 'Exactly right.') : `Exactly right: with perfect play this ${outcome(g.result)}.`;
   }
@@ -143,7 +149,8 @@ export function describe(facts, ctx) {
       case 'mobility': {
         if (facts.some(x => x.type === 'flips' && x.empties <= 10)) break; // near the end, counting moves isn't the point
         if (B) { if (f.theirs <= 2 && good) out.push(`${cap(w.subj(opp))} ${w.verb(opp, 'have', 'has')} only ${f.theirs} ${f.theirs === 1 ? 'move' : 'moves'} left to choose from.`); break; }
-        if (f.theirs <= 3 && f.theirs < f.theirsBefore && !flagged) out.push(S ? `Leaves ${colorName(opp)} ${f.theirs} ${f.theirs === 1 ? 'move' : 'moves'}.` : `Leaves ${w.subj(opp)} only ${f.theirs} ${f.theirs === 1 ? 'move' : 'moves'}: fewer choices means ${w.subj(opp)} may soon have to play a bad one.`);
+        // Only on the coach's own move: under a merely good one it reads as the reason to play it.
+        if (f.theirs <= 3 && f.theirs < f.theirsBefore && ctx.shown && ctx.shown.key === 'best') out.push(S ? `Leaves ${colorName(opp)} ${f.theirs} ${f.theirs === 1 ? 'move' : 'moves'}.` : `Leaves ${w.subj(opp)} only ${f.theirs} ${f.theirs === 1 ? 'move' : 'moves'}: fewer choices means ${w.subj(opp)} may soon have to play a bad one.`);
         else if (f.theirs >= f.theirsBefore + 4 && flagged) out.push(S ? `Mobility: ${colorName(opp)} ${f.theirsBefore} → ${f.theirs} moves.` : `Gives ${w.subj(opp)} more choices: ${f.theirs} moves instead of ${f.theirsBefore}.`);
         break;
       }
@@ -187,7 +194,7 @@ export function describe(facts, ctx) {
         else if (f.why === 'keepsCorner') { if (!gives) out.push(`After ${b}, ${w.subj(opp)} couldn't reach the ${f.corners.map(cornerName).join(' or ')} corner.`); }
         else if (f.why === 'pass') out.push(B ? `${b} would have left ${w.subj(opp)} with no move at all, so ${w.subj(opp)} would have had to pass.` : `${b} leaves ${w.subj(opp)} no move: a pass.`);
         else if (f.why === 'mobility') out.push(B ? `After ${b}, ${w.subj(opp)} would have had fewer moves to choose from (${f.theirs} instead of ${f.mine}). Fewer choices often forces bad moves later.`
-          : S ? `${b}: ${colorName(opp)} mobility ${f.theirs} vs ${f.mine}.` : `${b} leaves ${w.subj(opp)} ${f.theirs} moves instead of ${f.mine}: keeping ${w.poss(opp)} choices low is the key idea in the midgame.`);
+          : S ? `${b}: ${colorName(opp)} mobility ${f.theirs} vs ${f.mine}.` : `${b} leaves ${w.subj(opp)} ${f.theirs} moves instead of ${f.mine}, and still fewer a move later: fewer choices tend to mean worse ones.`);
         else if (f.why === 'frontier') { if (!B) out.push(S ? `${b}: frontier ${f.theirs} vs ${f.mine}.` : `${b} keeps ${w.poss(mover)} discs more tucked in: ${f.theirs} frontier discs instead of ${f.mine}.`); }
         else if (f.why === 'greed') out.push(B ? `This flips ${f.mine} discs; ${b} flips only ${f.theirs}. Early in the game, flipping fewer discs is usually better: it leaves your opponent fewer moves.`
           : S ? `Flips ${f.mine}; ${b} flips ${f.theirs}.` : `Flips ${f.mine} discs where ${b} flips ${f.theirs}: in the opening and midgame, fewer flips usually means fewer moves for ${w.subj(opp)}.`);
@@ -197,6 +204,28 @@ export function describe(facts, ctx) {
         else if (f.why === 'stable') out.push(B ? `${b} would have made ${f.gain} more discs safe for good.` : `${b} gains ${f.gain} more stable discs.`);
         else if (f.why === 'parity') { if (!B) out.push(S ? `${b}: odd region (${f.size}).` : `${b} plays into an odd region (${f.size} empties), keeping the last move there for ${w.subj(mover)}.`); }
         else if (f.why === 'cornerLine') out.push(B ? `With ${b}, ${w.subj(mover)} could have won the ${cornerName(f.corner)} corner a few moves later.` : `${b} leads to ${w.subj(mover)} taking the ${cornerName(f.corner)} corner.`);
+        break;
+      }
+      case 'whyBest': {
+        // The coach's own move: what it does that the next best move doesn't.
+        // One reason, the strongest one worth saying at this level.
+        if (S || facts.find(x => x.type === 'whyBest') !== f) break;
+        const phrase = x => ({
+          corner: () => facts.some(y => y.type === 'corner') ? null : `takes the ${cornerName(x.corner)} corner`,
+          keepsCorner: () => `doesn't let ${w.subj(opp)} reach the ${x.corners.map(cornerName).join(' or ')} corner`,
+          pass: () => facts.some(y => y.type === 'forcesPass') ? null : `leaves ${w.subj(opp)} no move at all`,
+          mobility: () => `leaves ${w.subj(opp)} ${x.theirs} moves instead of ${x.mine}, and still fewer a move later`,
+          stable: () => `makes ${x.gain} more discs safe for good`,
+          parity: () => B ? null : `plays into an odd region (${x.size} empties), so ${w.subj(mover)} can expect the last move there`,
+          greed: () => `flips fewer discs (${x.theirs} instead of ${x.mine}), which gives ${w.subj(opp)} less to work with`,
+          frontier: () => B ? null : `leaves fewer of ${w.poss(mover)} discs on the frontier (${x.theirs} instead of ${x.mine})`,
+          ownMobility: () => B ? null : `keeps more moves for ${w.subj(mover)} next turn (${x.theirs} instead of ${x.mine})`,
+        }[x.why] || (() => null))();
+        const ranked = facts.filter(x => x.type === 'whyBest').sort((a, b) => RANK.indexOf(a.why) - RANK.indexOf(b.why));
+        for (const x of ranked) {
+          const p = phrase(x);
+          if (p) { out.push(`Compared with <b>${sqName(x.other)}</b>, the next best, it ${p}.`); break; }
+        }
         break;
       }
       case 'cornerSoon':
@@ -244,6 +273,12 @@ const FAULTS = new Set(['givesCorner', 'xsquare', 'csquare', 'allowsWedge', 'mob
 export function mistakeLines(facts, ctx) {
   const plain = new Set(describe(facts.filter(f => !FAULTS.has(f.type)), ctx));
   return describe(facts, ctx).filter(t => !plain.has(t));
+}
+
+// Under a flagged move whose better square the opponent played straight after.
+export function missedLine(square, ctx) {
+  const w = words(ctx);
+  return `${cap(w.subj(ctx.mover))} missed <b>${sqName(square)}</b>, and ${w.subj(3 - ctx.mover)} took it right away.`;
 }
 
 // Find it yourself: the explanation lines minus any that would give the answer

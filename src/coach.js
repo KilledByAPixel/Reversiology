@@ -68,8 +68,15 @@ export function gradeMove(before, move) {
   const wrLoss = Math.max(0, best.winrate - entry.winrate);
   const grade = classify(ptLoss, wrLoss, exact);
   const alternatives = before.moves.filter(m => m !== entry && m.score >= best.score - 1).slice(0, 3);
+  // For a best move: how many discs ahead of the next best move it was (null
+  // with no other move). A bound on the runner-up only makes the gap bigger.
+  let gap = null, runnerUp = null;
+  if (grade === 'best') {
+    const runner = before.moves.find(m => m !== entry);
+    if (runner) { gap = entry.score - runner.score; runnerUp = runner.move; }
+  }
   return {
-    grade, ptLoss, wrLoss, exact, mover,
+    grade, ptLoss, wrLoss, exact, mover, gap, runnerUp,
     bestMove: best.move, bestScore: best.score, score: entry.score,
     bestWinrate: best.winrate, winrate: entry.winrate,
     // Exact results: what the move and the best move lead to with perfect play.

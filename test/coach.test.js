@@ -187,3 +187,26 @@ test('key moments: the biggest mistakes, capped, a few moves apart, in move orde
   assert.equal(keyMoments([]).length, 0);
   assert.equal(keyMoments([{ depth: 5, ptLoss: 9 }])[0].turning, false, 'a single moment is no turning point');
 });
+
+test('a best move says how far ahead it was, and why, against the next best', () => {
+  const g = { grade: 'best', gap: 6, exact: false };
+  assert.match(verdict(g, 'beginner', { key: 'best' }), /no other move was close/);
+  assert.match(verdict(g, 'improving', { key: 'best' }), /about 6 discs worse/);
+  assert.equal(verdict({ ...g, gap: 1 }, 'improving', { key: 'best' }), 'Exactly the coach\'s choice.');
+  const facts = [{ type: 'whyBest', why: 'greed', other: parseSq('d3'), mine: 4, theirs: 1 }, { type: 'whyBest', why: 'keepsCorner', other: parseSq('d3'), corners: [parseSq('h8')] }];
+  const lines = describe(facts, { level: 'beginner', mover: BLACK, you: BLACK, shown: { key: 'best', flagged: false } });
+  assert.equal(lines.length, 1, 'one reason');
+  assert.match(lines[0], /Compared with <b>d3<\/b>, the next best, it doesn't let White reach the h8 corner/, 'the strongest reason first');
+});
+
+test('the coach only praises leaving the opponent few moves on its own best move', () => {
+  const facts = [{ type: 'mobility', theirs: 2, theirsBefore: 6, mine: 8 }];
+  const say = key => describe(facts, { level: 'improving', mover: BLACK, you: BLACK, shown: { key, flagged: false } });
+  assert.equal(say('best').length, 1);
+  assert.equal(say('good').length, 0, 'not under a move that lost discs');
+});
+
+test('a mistake whose better square the opponent took next says so', async () => {
+  const { missedLine } = await import('../src/wording.js');
+  assert.equal(missedLine(parseSq('c4'), { level: 'improving', mover: BLACK, you: BLACK }), 'You missed <b>c4</b>, and White took it right away.');
+});

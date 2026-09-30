@@ -160,6 +160,20 @@ export function squeezeFact(before, move, reply, best, bestReply, mover) {
   return { type: 'vsBest', why: 'squeeze', best, reply, mine, theirs };
 }
 
+// Whether the opponent still has at least 2 more moves at the end of line
+// `worse` than of line `better` (each: the move, the reply, the mover's next
+// move, from `before`). False when either line is too short to tell.
+export function mobilityHolds(before, worse, better, mover) {
+  const count = line => {
+    if (line.length < 3) return null;
+    const b = before.clone(); b.toPlay = mover;
+    for (const m of line) if (m == null || m < 0 || !b.play(m)) return null;
+    return b.legalMoves(3 - mover).length;
+  };
+  const a = count(worse), c = count(better);
+  return a != null && c != null && a >= c + 2;
+}
+
 // A final disc count for a perfect-play margin, as [mover, opponent] out of 64.
 function finalDiscs(board, mover, margin) {
   const m = Math.max(-64, Math.min(64, margin));
@@ -174,8 +188,14 @@ export function nodeFacts(node, reads) {
   node.facts = moveFacts({ before: node.parent.board, after: node.board, move: node.move, mover: node.color, flipped: node.flipped, reads });
   // Against the coach's choice, once the read before the move has one.
   const best = reads.before && reads.before.moves && reads.before.moves[0];
+  const played = reads.after && reads.after.moves && reads.after.moves[0];
+  const lineOf = (m, pv) => [m, ...(pv || [])].slice(0, 3);
+  const playedLine = played ? [node.move, played.move, ...(played.pv || [])].slice(0, 3) : [node.move];
   if (best && best.move !== node.move) {
-    node.facts.push(...compareFacts(node.parent.board, node.move, best.move, node.color));
+    // A mobility difference counts only if it lasts: still there a move later
+    // in the coach's expected lines, not just right after the move.
+    node.facts.push(...compareFacts(node.parent.board, node.move, best.move, node.color)
+      .filter(f => f.why !== 'mobility' || mobilityHolds(node.parent.board, playedLine, lineOf(best.move, best.pv), node.color)));
     // The coach's line wins a corner soon, and this one doesn't.
     const c = cornerInLine([best.move, ...(best.pv || [])], node.color, node.color, 5);
     const played = reads.after && reads.after.moves && reads.after.moves[0];
@@ -185,6 +205,15 @@ export function nodeFacts(node, reads) {
     // against after the coach's move and its answer.
     const squeeze = squeezeFact(node.parent.board, node.move, played && played.move, best.move, best.pv && best.pv[0], node.color);
     if (squeeze) node.facts.push(squeeze);
+  } else if (best && reads.before.moves.length > 1) {
+    // The coach's own move: what it does that the next best move doesn't.
+    const runner = reads.before.moves[1];
+    if (runner.score < best.score) {
+      const why = compareFacts(node.parent.board, runner.move, node.move, node.color)
+        .filter(f => ['corner', 'keepsCorner', 'pass', 'mobility', 'stable', 'parity', 'greed', 'frontier', 'ownMobility'].includes(f.why))
+        .filter(f => f.why !== 'mobility' || mobilityHolds(node.parent.board, lineOf(runner.move, runner.pv), lineOf(best.move, best.pv), node.color));
+      node.facts.push(...why.map(f => ({ ...f, type: 'whyBest', other: runner.move })));
+    }
   }
   return node.facts;
 }

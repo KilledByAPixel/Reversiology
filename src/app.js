@@ -6,7 +6,7 @@ import { Engine, EnginePool } from './engine-client.js';
 import { LEVELS, levelSearch, pickLevelMove, nextLevel } from './levels.js';
 import { annotate, gradeMove, gradesMove, GRADES, describeScore, hintList, openingOf, bookMoves, keyMoments } from './coach.js';
 import { nodeFacts, moveFacts } from './explain.js';
-import { COACH_FOR, resolveLevel, gradeLabel, levelGrade, verdict, verdictSaysResult, describe, describeNote, positionNotes, hideAnswer, mistakeLines } from './wording.js';
+import { COACH_FOR, resolveLevel, gradeLabel, levelGrade, verdict, verdictSaysResult, describe, describeNote, positionNotes, hideAnswer, mistakeLines, missedLine } from './wording.js';
 import { stableDiscs, frontierDiscs, dangerSquares, emptyRegions } from './concepts.js';
 import { BoardView } from './view.js';
 import { linkPoints, pointReadout, movePhrase, plainText, positionPhrase, resultPhrase } from './access.js';
@@ -808,7 +808,10 @@ function moveEntry(node) {
     }
   }
   if (node.backTo && !resigned) html += `<div class="fb-actions"><button data-act="back" data-id="${node.id}">Back to my move (${sqName(node.backTo.move)})</button></div>`;
-  return wrap(html + list(describe(facts, ctx)));
+  const lines = describe(facts, ctx);
+  const missed = g && ctx.shown && ctx.shown.flagged ? tookNext(node) : null;
+  if (missed != null) lines.unshift(missedLine(missed, ctx));
+  return wrap(html + list(lines));
 }
 
 // Find it yourself: the player's Mistake or Blunder against the AI, with the
@@ -905,6 +908,14 @@ function nextGameNote(margin) {
   if (!settings.ladder) return levelAdvice(margin);
   const next = ladderSentence();
   return next ? `<p class="advice">${next}</p>` : '';
+}
+
+// The square node's move missed, when the opponent played it next on the line.
+// Null otherwise.
+function tookNext(node) {
+  const next = node.lastChild || node.children[0], g = node.grade;
+  if (!next || !g || g.bestMove === PASS || next.color === node.color) return null;
+  return next.move === g.bestMove ? next.move : null;
 }
 
 // Suggests a better-matched opponent after a lopsided game. margin is black-minus-white.
