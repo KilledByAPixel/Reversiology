@@ -194,8 +194,10 @@ export function nodeFacts(node, reads) {
   if (best && best.move !== node.move) {
     // A mobility difference counts only if it lasts: still there a move later
     // in the coach's expected lines, not just right after the move.
+    // (holds: checked here, so the wording can say so; puzzles compare without the lines.)
     node.facts.push(...compareFacts(node.parent.board, node.move, best.move, node.color)
-      .filter(f => f.why !== 'mobility' || mobilityHolds(node.parent.board, playedLine, lineOf(best.move, best.pv), node.color)));
+      .filter(f => f.why !== 'mobility' || mobilityHolds(node.parent.board, playedLine, lineOf(best.move, best.pv), node.color))
+      .map(f => f.why === 'mobility' ? { ...f, holds: true } : f));
     // The coach's line wins a corner soon, and this one doesn't.
     const c = cornerInLine([best.move, ...(best.pv || [])], node.color, node.color, 5);
     const played = reads.after && reads.after.moves && reads.after.moves[0];
@@ -212,7 +214,7 @@ export function nodeFacts(node, reads) {
       const why = compareFacts(node.parent.board, runner.move, node.move, node.color)
         .filter(f => ['corner', 'keepsCorner', 'pass', 'mobility', 'stable', 'parity', 'greed', 'frontier', 'ownMobility'].includes(f.why))
         .filter(f => f.why !== 'mobility' || mobilityHolds(node.parent.board, lineOf(runner.move, runner.pv), lineOf(best.move, best.pv), node.color));
-      node.facts.push(...why.map(f => ({ ...f, type: 'whyBest', other: runner.move })));
+      node.facts.push(...why.map(f => ({ ...f, type: 'whyBest', other: runner.move, holds: f.why === 'mobility' })));
     }
   }
   return node.facts;

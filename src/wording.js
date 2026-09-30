@@ -194,7 +194,7 @@ export function describe(facts, ctx) {
         else if (f.why === 'keepsCorner') { if (!gives) out.push(`After ${b}, ${w.subj(opp)} couldn't reach the ${f.corners.map(cornerName).join(' or ')} corner.`); }
         else if (f.why === 'pass') out.push(B ? `${b} would have left ${w.subj(opp)} with no move at all, so ${w.subj(opp)} would have had to pass.` : `${b} leaves ${w.subj(opp)} no move: a pass.`);
         else if (f.why === 'mobility') out.push(B ? `After ${b}, ${w.subj(opp)} would have had fewer moves to choose from (${f.theirs} instead of ${f.mine}). Fewer choices often forces bad moves later.`
-          : S ? `${b}: ${colorName(opp)} mobility ${f.theirs} vs ${f.mine}.` : `${b} leaves ${w.subj(opp)} ${f.theirs} moves instead of ${f.mine}, and still fewer a move later: fewer choices tend to mean worse ones.`);
+          : S ? `${b}: ${colorName(opp)} mobility ${f.theirs} vs ${f.mine}.` : `${b} leaves ${w.subj(opp)} ${f.theirs} moves instead of ${f.mine}${f.holds ? ', and still fewer a move later' : ''}: fewer choices tend to mean worse ones.`);
         else if (f.why === 'frontier') { if (!B) out.push(S ? `${b}: frontier ${f.theirs} vs ${f.mine}.` : `${b} keeps ${w.poss(mover)} discs more tucked in: ${f.theirs} frontier discs instead of ${f.mine}.`); }
         else if (f.why === 'greed') out.push(B ? `This flips ${f.mine} discs; ${b} flips only ${f.theirs}. Early in the game, flipping fewer discs is usually better: it leaves your opponent fewer moves.`
           : S ? `Flips ${f.mine}; ${b} flips ${f.theirs}.` : `Flips ${f.mine} discs where ${b} flips ${f.theirs}: in the opening and midgame, fewer flips usually means fewer moves for ${w.subj(opp)}.`);
@@ -214,7 +214,7 @@ export function describe(facts, ctx) {
           corner: () => facts.some(y => y.type === 'corner') ? null : `takes the ${cornerName(x.corner)} corner`,
           keepsCorner: () => `doesn't let ${w.subj(opp)} reach the ${x.corners.map(cornerName).join(' or ')} corner`,
           pass: () => facts.some(y => y.type === 'forcesPass') ? null : `leaves ${w.subj(opp)} no move at all`,
-          mobility: () => `leaves ${w.subj(opp)} ${x.theirs} moves instead of ${x.mine}, and still fewer a move later`,
+          mobility: () => `leaves ${w.subj(opp)} ${x.theirs} moves instead of ${x.mine}${x.holds ? ', and still fewer a move later' : ''}`,
           stable: () => `makes ${x.gain} more discs safe for good`,
           parity: () => B ? null : `plays into an odd region (${x.size} empties), so ${w.subj(mover)} can expect the last move there`,
           greed: () => `flips fewer discs (${x.theirs} instead of ${x.mine}), which gives ${w.subj(opp)} less to work with`,
