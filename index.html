@@ -35,6 +35,7 @@
   <main class="board-col">
     <header class="topbar">
       <div class="brand"><img class="logo" src="icon-192.png" alt="" width="28" height="28">Reversi<span>ology</span></div>
+      <button id="coachBadge" class="coach-badge" type="button" hidden></button>
       <div class="players">
         <div class="player" id="pBlack" title="Discs on the board, and legal moves">
           <span class="disc-icon black"></span><span class="pname">Black</span><span class="count">2</span><span class="mob" title="Legal moves (mobility)" hidden></span>
@@ -51,12 +52,12 @@
     <div id="announcer" class="sr-only" aria-live="polite"></div>
 
     <div class="controls">
-      <button id="btnUndo" title="Take back your last move (U)">↶ Take back</button>
-      <button id="btnHint" title="Show the coach's best moves (H)">💡 Hint</button>
-      <button id="btnThreat" title="What would the opponent play if it were their move? (O)">👁 Their idea</button>
-      <button id="btnAI" title="Play the coach's best move for the side to move (full strength, whatever the AI level)">🤖 AI move</button>
+      <button id="btnUndo" title="Take back your last move (U)"><span class="ico" aria-hidden="true">↶ </span>Take back</button>
+      <button id="btnHint" title="Show the coach's best moves (H)"><span class="ico" aria-hidden="true">💡 </span>Hint</button>
+      <button id="btnThreat" title="What would the opponent play if it were their move? (O)"><span class="ico" aria-hidden="true">👁 </span>Their idea</button>
+      <button id="btnAI" title="Play the coach's best move for the side to move (full strength, whatever the AI level)"><span class="ico" aria-hidden="true">🤖 </span>AI move</button>
       <button id="btnResign">Resign</button>
-      <button id="btnPuzzle" title="Puzzles: find the best move in positions from real games">🧩 Puzzles</button>
+      <button id="btnPuzzle" title="Puzzles: find the best move in positions from real games"><span class="ico" aria-hidden="true">🧩 </span>Puzzles</button>
       <button id="btnNew" class="primary">New game</button>
     </div>
 

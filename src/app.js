@@ -651,7 +651,30 @@ function scoreLine(an) {
   return `Expected result: <b>${describeScore(an.blackScore)}</b>${lead ? ` <span class="muted">${lead === 1 ? 'disc' : 'discs'}</span>` : ''}`;
 }
 
+// On narrow screens the coach card is below the board: a badge beside the
+// logo shows the grade of the player's latest move (study mode: the latest
+// move's), and tapping it scrolls to the card. Hidden by CSS where the card
+// is beside the board, and during puzzles (they have their own panel).
+function renderBadge() {
+  const el = $('#coachBadge'), cur = game.current;
+  const node = !settings.human ? cur : [cur, cur.parent].find(n => n && n.parent && n.color === settings.human);
+  const shows = settings.coach && settings.show.feedback && !puzzle && node && node.parent && node.move !== PASS && isGraded(node);
+  if (!shows) { el.hidden = true; return; }
+  const sq = sqName(node.move);
+  const shown = node.grade && levelGrade(node.grade, coachLevel(), factsFor(node));
+  const text = shown ? `${shown.label} · ${sq}` : 'grading…';
+  const key = `${text}|${shown ? shown.color : ''}`;
+  el.hidden = false;
+  if (el.dataset.key === key) return;
+  el.dataset.key = key;
+  el.textContent = `${text} ↓`;
+  el.classList.toggle('pending', !shown);
+  el.style.setProperty('--pill', shown ? shown.color : '');
+  el.setAttribute('aria-label', shown ? `Coach: ${shown.label} on ${sq}. Show the coach's comments.` : 'Coach: still grading your move. Show the coach.');
+}
+
 function renderCoach() {
+  renderBadge();
   const node = game.current, an = node.analysis;
   $('#coachStatus').textContent = !settings.coach ? 'off' : game.isOver(node) ? '' :
     an ? `${an.exact ? 'solved' : `depth ${an.depth}`}${node.analysisDone ? '' : '…'}` : 'reading…';
@@ -1320,6 +1343,7 @@ function setupControls() {
     save(); render(); scheduleCoach();
   };
   $('#optFindYourself').onchange = e => { settings.findYourself = e.target.checked; save(); render(); };
+  $('#coachBadge').onclick = () => $('.coach').scrollIntoView({ behavior: 'smooth', block: 'start' });
   $('#optLadder').onchange = e => { settings.ladder = e.target.checked; save(); render(); };
   $('#optSound').onchange = e => { settings.sound = e.target.checked; setSoundEnabled(settings.sound); save(); if (settings.sound) playSound('disc'); };
   $('#optSpeak').onchange = e => { settings.speak = e.target.checked; setSpeech(settings.speak); save(); announce(settings.speak ? 'Speech on.' : 'Speech off.'); };

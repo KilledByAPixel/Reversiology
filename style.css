@@ -65,6 +65,8 @@ kbd {
 @media (max-width: 900px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "board" "side" "more"; padding: 10px 16px 40px; }
   .more { max-width: none; grid-template-columns: minmax(0, 1fr); }
+  /* The coach card is below the board here: show the coach badge. */
+  .coach-badge:not([hidden]) { display: inline-block; }
 }
 
 /* ---------------------------------------------------------------- board column */
@@ -76,6 +78,15 @@ kbd {
 .brand { font-weight: 750; font-size: 20px; letter-spacing: .2px; white-space: nowrap; }
 .brand .logo { width: 28px; height: 28px; border-radius: 6px; vertical-align: -7px; margin-right: 8px; }
 .brand span { color: var(--accent); font-weight: 600; }
+/* The coach badge: shown only by the single-column layout above, where the
+   coach card is below the board (one rule, so the two can never disagree). */
+.coach-badge {
+  display: none; margin-left: auto; padding: 4px 11px; border-radius: 999px; font-size: 13px; font-weight: 700; letter-spacing: .2px;
+  background: var(--pill, #888); border-color: transparent; color: #fff;
+}
+.coach-badge.pending { background: var(--line); color: var(--muted); }
+.coach-badge:hover:not(:disabled) { background: var(--pill, #888); filter: brightness(1.08); }
+.coach-badge.pending:hover:not(:disabled) { background: var(--line); }
 .players { display: flex; gap: 8px; }
 .player {
   display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 999px;
@@ -134,6 +145,8 @@ button:disabled { opacity: .45; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 button.primary:hover:not(:disabled) { filter: brightness(1.07); background: var(--accent); }
 button.on { background: #fff3c4; border-color: #e2c35a; color: #3b2f00; }
+/* Hovered (or, on a touch screen, last tapped) it stays light, so its dark text stays readable in dark mode. */
+button.on:hover:not(:disabled) { background: #ffeca6; }
 button.pass-btn { display: none; }
 .nav { align-items: center; }
 .nav button { min-width: 42px; }
@@ -141,6 +154,10 @@ button.pass-btn { display: none; }
 /* Phones: the row spans the board and the label gives way, rather than wrapping (it needs 362px). */
 @media (max-width: 480px) {
   .nav { align-self: stretch; flex-wrap: nowrap; }
+  /* Two rows of game buttons instead of three: no icons, slightly smaller text. */
+  .controls { gap: 5px; }
+  .controls button { padding: 7px 9px; font-size: 13px; }
+  .controls .ico { display: none; }
   .move-label { min-width: 0; flex: 1; }
 }
 .variations { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; margin-top: 8px; font-size: 13px; }
