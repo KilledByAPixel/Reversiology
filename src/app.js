@@ -12,6 +12,7 @@ import { BoardView } from './view.js';
 import { linkPoints, pointReadout, movePhrase, plainText, positionPhrase, resultPhrase } from './access.js';
 import { initAnnouncer, announce, speak, hush, setSpeech, repeatLast, speechAvailable } from './announce.js';
 import { renderGraph } from './graph.js';
+import { safeStorage } from './storage.js';
 import { discSound, playSound, setSoundEnabled, SOUNDS, ZZFXSound } from './sound.js';
 import { puzzleAt, nextPuzzle, puzzleCount, solvedCount, judge, prompt, THEME_HINTS, THEME_NAMES, THEME_LESSONS, DIFFICULTY } from './puzzle.js';
 
@@ -1160,25 +1161,43 @@ function renderPuzzle() {
 // Child-index path from the root to node.
 const pathOf = node => { const p = []; for (let n = node; n.parent; n = n.parent) p.unshift(n.parent.children.indexOf(n)); return p; };
 
+// The browser's storage, reached only through this (storage.js): a stand-in
+// in memory when it's blocked, and whether writes are being kept.
+const storage = safeStorage(() => localStorage);
+
 function save() {
+  let written = true;
   try {
     // In puzzle mode the game to come back to is saved, not the puzzle.
     const g = puzzle ? puzzle.saved.game : game, st = puzzle ? { ...settings, human: puzzle.saved.human } : settings;
-    localStorage.setItem(STORE, JSON.stringify({ settings: st, text: g.toText(), path: pathOf(g.current), resigned: puzzle ? puzzle.saved.resigned : resigned }));
-    localStorage.setItem(PUZZLE_STORE, JSON.stringify({ solved: [...puzzleProgress.solved], difficulty: puzzleProgress.difficulty, last: puzzleProgress.last }));
-  } catch { /* storage unavailable */ }
+    storage.setItem(STORE, JSON.stringify({ settings: st, text: g.toText(), path: pathOf(g.current), resigned: puzzle ? puzzle.saved.resigned : resigned }));
+    storage.setItem(PUZZLE_STORE, JSON.stringify({ solved: [...puzzleProgress.solved], difficulty: puzzleProgress.difficulty, last: puzzleProgress.last }));
+    written = storage.durable;
+  } catch { written = false; }
+  kept(written);
+}
+
+// Autosave that isn't happening is said: a line under Save game / Load game
+// while writes fail (and once in the status line when it starts); it goes
+// away when a later write works.
+let notSaved = false;
+function kept(written) {
+  if (written === !notSaved) return;
+  notSaved = !written;
+  $('#saveNote').hidden = written;
+  if (notSaved) flash('Your game is not being saved in this browser. Use Save game to keep it.', 'bad');
 }
 
 function loadPuzzleProgress() {
   try {
-    const d = JSON.parse(localStorage.getItem(PUZZLE_STORE));
+    const d = JSON.parse(storage.getItem(PUZZLE_STORE));
     if (d) puzzleProgress = { solved: new Set(d.solved || []), difficulty: [0, 1, 2, 3].includes(d.difficulty) ? d.difficulty : 0, last: d.last ?? -1 };
   } catch { /* none saved */ }
 }
 
 function load() {
   try {
-    const d = JSON.parse(localStorage.getItem(STORE));
+    const d = JSON.parse(storage.getItem(STORE));
     if (!d) return false;
     settings = { ...structuredClone(DEFAULTS), ...d.settings, show: { ...DEFAULTS.show, ...(d.settings && d.settings.show) } };
     settings.level = Math.min(LEVELS.length - 1, Math.max(0, settings.level | 0));
@@ -1403,12 +1422,15 @@ setSoundEnabled(settings.sound);
 setSpeech(settings.speak);
 syncOptions();
 afterChange();
+kept(storage.durable); // storage that keeps nothing is said from the start
 
 // Handy for debugging from the console, and for tests.
 window.reversi = {
   get game() { return game; },
   get settings() { return settings; },
   get aiThinking() { return !!aiNode; },
+  get storage() { return storage; },
+  get notSaved() { return notSaved; },
   // The Try preview: on, and kept on by a first tap (armed).
   get preview() { return { on: !!peek, armed: !!armed }; },
   get coachBusy() { return coach.busy; },
