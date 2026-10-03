@@ -89,7 +89,7 @@ const coach = new EnginePool('coach', COACHES);
 // first use: each worker holds its own copy of the evaluation.
 let scoutEngine = null;
 const scout = { search: (...a) => (scoutEngine ||= new Engine('scout')).search(...a), cancel: () => scoutEngine && scoutEngine.cancel() };
-Engine.onError = (name, msg) => flash(`The ${name} engine stopped working (${msg}). Reload the page; if it keeps happening, try a current Chrome, Firefox or Safari.`, 'bad');
+Engine.onError = (name, msg) => flash(`The ${name} engine stopped working (${msg}). It restarts by itself on the next move (press AI move to try again); if it keeps happening, reload the page or try a current Chrome, Firefox or Safari.`, 'bad');
 Engine.onWarning = (name, msg) => { if (name === 'opponent') flash(`The evaluation couldn't load (${msg}), so the AI and coach are much weaker. Reload to try again.`, 'bad'); };
 const view = new BoardView($('#board'), { onClick, onHover, onCursor });
 

@@ -1,36 +1,73 @@
 // Main-thread handle to an engine worker. search() returns a promise for the
 // final results and streams progress; starting a new search cancels the old one.
 
+// How long the evaluation weights and the WebAssembly core may take to arrive.
+// The weights are 4.5 MB: generous, but a request that stalls must not leave
+// every worker (and the AI's turn) waiting for ever.
+export const DOWNLOAD_MS = 60000;
+
 // The evaluation weights and the WebAssembly search core, downloaded once and
-// handed to every worker. Without the core, the workers search in JavaScript.
-let weights = null, core = null;
-const loadWeights = () => weights ||= fetch(new URL('../weights/eval.bin.gz', import.meta.url))
-  .then(res => { if (!res.ok) throw new Error(`couldn't load the evaluation (${res.status})`); return res.arrayBuffer(); })
-  .then(bytes => ({ bytes }), e => ({ error: e.message || String(e) }));
-const loadCore = () => core ||= fetch(new URL('./engine/core.wasm', import.meta.url))
-  .then(res => res.ok ? res.arrayBuffer() : null, () => null);
+// handed to every worker: { bytes } or { error } for the weights, and wasm (or
+// null: the workers then search in JavaScript). At the deadline, whatever has
+// arrived is used and the rest is given up.
+let data = null;
+function loadData() {
+  return data ||= new Promise(resolve => {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const signal = ctl ? ctl.signal : undefined;
+    let weights = null, wasm, done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve({ ...(weights || { error: 'the evaluation took too long to arrive' }), wasm: wasm || null });
+    };
+    const timer = setTimeout(() => { finish(); if (ctl) ctl.abort(); }, Engine.downloadMs);
+    fetch(new URL('../weights/eval.bin.gz', import.meta.url), { signal })
+      .then(res => { if (!res.ok) throw new Error(`couldn't load the evaluation (${res.status})`); return res.arrayBuffer(); })
+      .then(bytes => ({ bytes }), e => ({ error: e.message || String(e) }))
+      .then(w => { weights = w; if (wasm !== undefined) finish(); });
+    fetch(new URL('./engine/core.wasm', import.meta.url), { signal })
+      .then(res => res.ok ? res.arrayBuffer() : null)
+      .then(c => c, () => null)
+      .then(c => { wasm = c; if (weights) finish(); });
+  });
+}
 
 export class Engine {
   // ttBits: the size of the worker's transposition table (2^ttBits entries,
   // 24 bytes each).
   constructor(name, { ttBits = 18 } = {}) {
     this.name = name;
-    this.worker = new Worker(new URL('./engine-worker.js', import.meta.url), { type: 'module' });
-    Promise.all([loadWeights(), loadCore()]).then(([w, c]) => {
-      // Each worker gets its own copy (transferred, so it isn't copied twice).
-      const bytes = w.bytes && w.bytes.slice(0), wasm = c && c.slice(0);
-      this.worker.postMessage({ type: 'weights', bytes, wasm, ttBits, error: w.error }, [bytes, wasm].filter(Boolean));
-    });
+    this.ttBits = ttBits;
     this.nextId = 1;
     this.pending = null;
-    this.worker.onmessage = e => this.onMessage(e.data);
-    this.worker.onerror = e => {
-      console.error(`${name} worker error`, e.message);
-      // Fail the running search instead of leaving the caller waiting forever.
+    this.start();
+  }
+
+  // A new worker, sent the engine data. A worker that broke (an error event)
+  // is replaced this way by the next search; messages and errors from a
+  // replaced worker are nobody's.
+  start() {
+    const worker = this.worker = new Worker(new URL('./engine-worker.js', import.meta.url), { type: 'module' });
+    this.failed = false;
+    loadData().then(d => {
+      if (this.worker !== worker) return;
+      // Each worker gets its own copy (transferred, so it isn't copied twice).
+      const bytes = d.bytes && d.bytes.slice(0), wasm = d.wasm && d.wasm.slice(0);
+      worker.postMessage({ type: 'weights', bytes, wasm, ttBits: this.ttBits, error: d.error }, [bytes, wasm].filter(Boolean));
+    });
+    worker.onmessage = e => { if (this.worker === worker && !this.failed) this.onMessage(e.data); };
+    worker.onerror = e => {
+      if (this.worker !== worker || this.failed) return;
+      console.error(`${this.name} worker error`, e.message);
+      this.failed = true;
+      try { worker.terminate(); } catch { /* already gone */ }
+      // Fail the running search instead of leaving the caller waiting for ever.
       const job = this.pending;
       this.pending = null;
       if (job) job.resolve(null);
-      if (Engine.onError) Engine.onError(name, e.message || 'failed to load');
+      if (Engine.onError) Engine.onError(this.name, e.message || 'failed to load');
     };
   }
 
@@ -39,6 +76,7 @@ export class Engine {
   // onProgress(results, done) and reportMs.
   search(board, { onProgress = null, reportMs = 250, ...opts } = {}) {
     this.cancel();
+    if (this.failed) this.start(); // one new worker per search asked for, never a loop
     const id = this.nextId++;
     return new Promise(resolve => {
       this.pending = { id, resolve, onProgress };
@@ -48,7 +86,7 @@ export class Engine {
 
   cancel() {
     if (!this.pending) return;
-    this.worker.postMessage({ type: 'stop' });
+    if (!this.failed) this.worker.postMessage({ type: 'stop' });
     this.pending.resolve(null);
     this.pending = null;
   }
@@ -67,6 +105,7 @@ export class Engine {
     }
   }
 }
+Engine.downloadMs = DOWNLOAD_MS; // (tests make it short)
 
 // Several engines, each given its own job (pool.engines[i]); search() uses the first.
 export class EnginePool {
