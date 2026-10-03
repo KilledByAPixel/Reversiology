@@ -2,8 +2,8 @@
 // stamp of its contents, and the page checks it's the latest version.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, existsSync, rmSync, mkdirSync, writeFileSync, cpSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,7 +14,10 @@ execFileSync(process.execPath, ['tools/build.js', '--out', out, '--no-zip'], { s
 const read = f => readFileSync(join(out, f));
 const text = f => read(f).toString('utf8');
 const stamp = f => createHash('sha256').update(read(f)).digest('hex').slice(0, 10);
-process.on('exit', () => rmSync(out, { recursive: true, force: true }));
+// Temporary directories, removed together on exit (one listener: one per
+// directory passes Node's limit of ten).
+const temps = [out];
+process.on('exit', () => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 
 test('build: the page and its code are stamped with their contents', () => {
   const html = text('index.html');
@@ -92,4 +95,60 @@ test('build: an older page reloads once; a late answer after starting changes no
   arrive({ json: () => Promise.resolve({ version: '0123456789' }) }); await flush();
   assert.equal(late.started.length, 1, 'started once');
   assert.equal(late.reloads(), 0, 'no reload once the game is running');
+});
+
+// A copy of the repository to build in, so a guard that fails deletes the copy
+// and not the work: <tmp>/parent/repo, with keep.txt in parent (to see that
+// --out .. touched nothing above), the files the page needs, the directories
+// the build reads, only the build's own tools, and keep.txt in every other
+// directory the guard protects.
+function copyOfRepo() {
+  const parent = mkdtempSync(join(tmpdir(), 'reversiology-guard-'));
+  temps.push(parent);
+  const repo = join(parent, 'repo');
+  mkdirSync(join(repo, 'tools'), { recursive: true });
+  writeFileSync(join(parent, 'keep.txt'), 'keep');
+  for (const f of readdirSync('.')) if (/\.(html|css|png|jpg|txt)$|^LICENSE$/.test(f)) cpSync(f, join(repo, f));
+  for (const d of ['src', 'weights']) cpSync(d, join(repo, d), { recursive: true });
+  for (const f of ['build.js', 'build-guard.js']) cpSync(join('tools', f), join(repo, 'tools', f));
+  for (const d of ['test', '.git', '.github', 'local']) { mkdirSync(join(repo, d), { recursive: true }); writeFileSync(join(repo, d, 'keep.txt'), 'keep'); }
+  return { parent, repo };
+}
+const build = (repo, outDir) => spawnSync(process.execPath, ['tools/build.js', '--out', outDir, '--no-zip'], { cwd: repo, encoding: 'utf8' });
+
+test('build guard: refuses to clear the repository, anything above it or anything it reads', () => {
+  const { parent, repo } = copyOfRepo();
+  for (const o of ['.', '..', '/', 'src', 'weights', 'tools', 'test', '.git', '.github', 'src/engine']) {
+    const r = build(repo, o);
+    assert.equal(r.status, 1, o);
+    assert.match(r.stderr, /^Not building into .*: .*\.\n$/, `${o}: one plain line, no stack trace`);
+  }
+  assert.ok(existsSync(join(parent, 'keep.txt')), 'nothing above the repository touched');
+  for (const f of ['index.html', 'src/app.js', 'weights/eval.bin.gz', 'tools/build.js', 'test/keep.txt', '.git/keep.txt']) assert.ok(existsSync(join(repo, f)), f);
+});
+
+test('build guard: a directory holding something else is refused; empty, new, marked and dist/ are built into', () => {
+  const { parent, repo } = copyOfRepo();
+  const other = join(parent, 'other');
+  mkdirSync(other); writeFileSync(join(other, 'mine.txt'), 'mine');
+  assert.equal(build(repo, other).status, 1);
+  assert.equal(readFileSync(join(other, 'mine.txt'), 'utf8'), 'mine', 'untouched');
+  const empty = join(parent, 'empty'); mkdirSync(empty);
+  for (const o of [empty, join(parent, 'new'), 'dist']) {
+    const r = build(repo, o);
+    assert.equal(r.status, 0, `${o}: ${r.stderr}`);
+    assert.ok(existsSync(join(o.startsWith('/') ? o : join(repo, o), 'index.html')));
+  }
+  assert.equal(build(repo, empty).status, 0, 'a directory a build wrote (it has the marker)');
+});
+
+test('build guard: a build that fails leaves the last one as it was', () => {
+  const { repo } = copyOfRepo();
+  assert.equal(build(repo, 'dist').status, 0);
+  const before = readFileSync(join(repo, 'dist', 'app.js'));
+  // An import form the inliner doesn't know makes the bundling throw.
+  writeFileSync(join(repo, 'src', 'access.js'), `import * as nope from './board.js';\n${readFileSync(join(repo, 'src', 'access.js'), 'utf8')}`);
+  assert.notEqual(build(repo, 'dist').status, 0);
+  assert.deepEqual(readFileSync(join(repo, 'dist', 'app.js')), before);
+  assert.ok(existsSync(join(repo, 'dist', 'weights', 'eval.bin.gz')));
 });

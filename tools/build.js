@@ -12,6 +12,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { outputRefusal, MARKER } from './build-guard.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const src = path.join(root, 'src');
@@ -19,6 +20,10 @@ const src = path.join(root, 'src');
 const arg = k => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : null; };
 const dist = path.resolve(arg('--out') || path.join(root, 'dist'));
 const noZip = process.argv.includes('--no-zip');
+// The output is emptied before it's written: refuse anything a mistyped --out
+// could destroy (tools/build-guard.js).
+const refusal = outputRefusal(root, dist);
+if (refusal) { console.error(`Not building into ${dist}: ${refusal}.`); process.exit(1); }
 
 // ------------------------------------------------------------------ module inliner
 
@@ -153,9 +158,6 @@ function zip(entries) {
 // the page covers app.js.
 const stamp = buf => createHash('sha256').update(buf).digest('hex').slice(0, 10);
 
-fs.rmSync(dist, { recursive: true, force: true });
-fs.mkdirSync(dist, { recursive: true });
-
 const files = new Map(); // dist name -> Buffer
 const v = name => `${name}?v=${stamp(files.get(name))}`;
 files.set('weights/eval.bin.gz', fs.readFileSync(path.join(root, 'weights', 'eval.bin.gz')));
@@ -216,14 +218,20 @@ swap('<script type="module" src="src/app.js"></script>', `<meta name="reversiolo
 files.set('index.html', Buffer.from(html));
 files.set('version.json', Buffer.from(JSON.stringify({ version }) + '\n'));
 
+// Everything is read, bundled and zipped in memory first: a build that fails
+// leaves the last output as it was. Only then is the output cleared.
+const archive = noZip ? null : zip([...files]);
+fs.rmSync(dist, { recursive: true, force: true });
+fs.mkdirSync(dist, { recursive: true });
+fs.writeFileSync(path.join(dist, MARKER), 'Written by tools/build.js. A directory with this file may be emptied by the next build.\n');
 for (const [name, data] of files) {
   fs.mkdirSync(path.dirname(path.join(dist, name)), { recursive: true });
   fs.writeFileSync(path.join(dist, name), data);
 }
 const kb = n => `${(n / 1024).toFixed(1)} KB`;
 for (const [name, data] of files) console.log(`  ${name.padEnd(36)} ${kb(data.length)}`);
-if (!noZip) {
-  fs.writeFileSync(path.join(dist, 'reversiology.zip'), zip([...files]));
-  console.log(`  ${'reversiology.zip'.padEnd(36)} ${kb(fs.statSync(path.join(dist, 'reversiology.zip')).size)}`);
+if (archive) {
+  fs.writeFileSync(path.join(dist, 'reversiology.zip'), archive);
+  console.log(`  ${'reversiology.zip'.padEnd(36)} ${kb(archive.length)}`);
 }
 console.log(`Built ${path.relative(root, dist) || dist} (${files.size} files${noZip ? '' : ' + zip'}), version ${version}`);
