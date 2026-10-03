@@ -5,6 +5,8 @@ a coach grades every move, explains why, and shows you what it would have played
 
 ## ▶ [Play Reversiology in your browser](https://killedbyapixel.github.io/Reversiology/)
 
+🎬 [Watch the trailer](https://www.youtube.com/watch?v=oXfKgSHOY5I)
+
 ![Reversiology: a game in progress with the coach panel and game graph](screenshot.png)
 
 ## What you get
