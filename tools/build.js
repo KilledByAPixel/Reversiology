@@ -172,7 +172,7 @@ files.set('app.js', Buffer.from(bundle(path.join(src, 'app.js'), {
   },
 })));
 files.set('style.css', fs.readFileSync(path.join(root, 'style.css')));
-for (const f of ['social.jpg', 'icon-32.png', 'icon-192.png', 'apple-touch-icon.png', 'LICENSE']) files.set(f, fs.readFileSync(path.join(root, f)));
+for (const f of ['social.jpg', 'icon-32.png', 'icon-192.png', 'apple-touch-icon.png', 'LICENSE', 'THIRD_PARTY_NOTICES.txt']) files.set(f, fs.readFileSync(path.join(root, f)));
 
 let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const swap = (from, to) => {

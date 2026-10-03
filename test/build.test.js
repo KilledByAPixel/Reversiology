@@ -39,7 +39,7 @@ test('build: the page knows its version and checks for a newer one', () => {
 });
 
 test('build: everything the page needs is there, and no zip when asked not to', () => {
-  for (const f of ['social.jpg', 'icon-32.png', 'icon-192.png', 'apple-touch-icon.png', 'LICENSE', 'weights/eval.bin.gz', 'engine/core.wasm']) assert.ok(existsSync(join(out, f)), f);
+  for (const f of ['social.jpg', 'icon-32.png', 'icon-192.png', 'apple-touch-icon.png', 'LICENSE', 'THIRD_PARTY_NOTICES.txt', 'weights/eval.bin.gz', 'engine/core.wasm']) assert.ok(existsSync(join(out, f)), f);
   assert.ok(!existsSync(join(out, 'reversiology.zip')));
 });
 
@@ -151,4 +151,12 @@ test('build guard: a build that fails leaves the last one as it was', () => {
   assert.notEqual(build(repo, 'dist').status, 0);
   assert.deepEqual(readFileSync(join(repo, 'dist', 'app.js')), before);
   assert.ok(existsSync(join(repo, 'dist', 'weights', 'eval.bin.gz')));
+});
+
+test('build: the ZIP holds the whole site, the licence and the notices included', () => {
+  const { repo } = copyOfRepo();
+  const r = spawnSync(process.execPath, ['tools/build.js'], { cwd: repo, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const zip = readFileSync(join(repo, 'dist', 'reversiology.zip'));
+  for (const f of ['index.html', 'app.js', 'engine-worker.js', 'engine/core.wasm', 'weights/eval.bin.gz', 'LICENSE', 'THIRD_PARTY_NOTICES.txt']) assert.ok(zip.includes(Buffer.from(f)), f);
 });
