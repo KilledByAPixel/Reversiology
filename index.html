@@ -34,7 +34,7 @@
 <div class="app">
   <main class="board-col">
     <header class="topbar">
-      <div class="brand"><img class="logo" src="icon-192.png" alt="" width="28" height="28">Reversi<span>ology</span></div>
+      <h1 class="brand"><img class="logo" src="icon-192.png" alt="" width="28" height="28">Reversi<span>ology</span></h1>
       <button id="coachBadge" class="coach-badge" type="button" hidden></button>
       <div class="players">
         <div class="player" id="pBlack" title="Discs on the board, and legal moves">
@@ -91,7 +91,7 @@
 
     <section class="card">
       <h2>Game graph <span class="muted small">click to jump</span></h2>
-      <div id="graph" class="graph"></div>
+      <div id="graph" class="graph" role="img" aria-label="Game graph: the chance of winning and the disc lead after each move, with mistakes marked. Click it to jump to a move; the arrow keys step through the game."></div>
       <div class="legend">
         <span><i class="lg-wr"></i>Black win %</span>
         <span><i class="lg-score"></i>Disc lead</span>
@@ -128,6 +128,8 @@
         <label class="inline"><input type="checkbox" id="optLadder"> Change AI strength after each game</label>
         <small class="muted help">Win and the next game is a level up; lose and it's a level down.</small>
         <label class="inline"><input type="checkbox" id="optSound"> Sound</label>
+        <label class="inline"><input type="checkbox" id="optShortcuts"> Single-key shortcuts</label>
+        <small class="muted help">Letter keys like H (hint) and U (take back). Turn off if they get pressed by accident, say by speech input.</small>
         <label class="inline"><input type="checkbox" id="optSpeak"> Speak announcements</label>
         <small class="muted help" id="speakNote" hidden>Speech isn't available in this browser.</small>
         <div class="row">
@@ -169,7 +171,7 @@
       </details>
       <details>
         <summary>Keyboard</summary>
-        <p><kbd>←</kbd>/<kbd>→</kbd> step · <kbd>Home</kbd>/<kbd>End</kbd> start/latest · <kbd>U</kbd> take back · <kbd>H</kbd> hint · <kbd>O</kbd> their idea · <kbd>Esc</kbd> clear markers<br>
+        <p><kbd>←</kbd>/<kbd>→</kbd> step · <kbd>Home</kbd>/<kbd>End</kbd> start/latest (on the board or its buttons) · <kbd>U</kbd> take back · <kbd>H</kbd> hint · <kbd>O</kbd> their idea · <kbd>Esc</kbd> clear markers<br>
         <kbd>M</kbd> legal moves · <kbd>V</kbd> flip preview · <kbd>D</kbd> danger squares · <kbd>T</kbd> stable discs · <kbd>F</kbd> frontier · <kbd>P</kbd> regions · <kbd>K</kbd> opening book · <kbd>G</kbd> grades · <kbd>B</kbd> best moves · <kbd>N</kbd> numbers<br><kbd>Tab</kbd> to the board, then <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move · <kbd>Enter</kbd> play · <kbd>PgUp</kbd>/<kbd>PgDn</kbd> step · <kbd>S</kbd> speech · <kbd>R</kbd> repeat</p>
       </details>
     </section>

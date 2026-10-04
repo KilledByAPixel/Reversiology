@@ -35,7 +35,7 @@ export function levelGrade(g, level, facts = []) {
   let key = SHOWN[level][g.grade];
   // Beginners learn most from corners: giving one away is always worth a word.
   if (level === 'beginner' && key === 'good' && g.grade !== 'best' && g.ptLoss >= 3 && facts.some(f => f.type === 'givesCorner')) key = 'mistake';
-  return { key, label: gradeLabel(key, level), color: GRADES[key].color, flagged: key !== 'best' && key !== 'good' };
+  return { key, label: gradeLabel(key, level), color: GRADES[key].color, ink: GRADES[key].ink, flagged: key !== 'best' && key !== 'good' };
 }
 
 const discs = n => `${n} ${Math.abs(n) === 1 ? 'disc' : 'discs'}`;

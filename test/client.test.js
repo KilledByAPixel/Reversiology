@@ -11,7 +11,8 @@ class FakeWorker {
   postMessage(m) {
     this.posted.push(m);
     // Answer searches at once, unless the test holds them.
-    if (m.type === 'search' && !this.hold) queueMicrotask(() => this.onmessage && this.onmessage({ data: { type: 'done', id: m.id, results: { ok: true } } }));
+    // (As in a browser, an error thrown by the page's handler is reported, not fatal.)
+    if (m.type === 'search' && !this.hold) queueMicrotask(() => { try { this.onmessage && this.onmessage({ data: { type: 'done', id: m.id, results: { ok: true } } }); } catch { /* reported */ } });
   }
   terminate() { this.terminated = true; }
 }
@@ -117,4 +118,27 @@ test('two failures in a row give null and one report each, and a replaced worker
   assert.deepEqual(reports, ['one', 'two']);
   assert.equal(e.busy, false, 'nothing left waiting');
   assert.equal(workers.length, 2, 'one new worker per search asked for');
+});
+
+test('a progress callback that throws still lets the search finish', async () => {
+  const { Engine } = await fresh(ok(4));
+  const e = new Engine('t');
+  const p = e.search(board, { onProgress: () => { throw new Error('a bug in the page'); } });
+  // The worker's answer runs the callback, which throws; the search still resolves.
+  assert.deepEqual(await Promise.race([p, new Promise(r => setTimeout(() => r('pending'), 100))]), { ok: true });
+  assert.equal(e.busy, false);
+});
+
+test('no worker at all: searches answer null, reported once', async () => {
+  const { Engine } = await fresh(ok(4));
+  const reports = [];
+  Engine.onError = (name, msg) => reports.push(msg);
+  const Real = globalThis.Worker;
+  globalThis.Worker = class { constructor() { throw new Error('blocked by policy'); } };
+  try {
+    const e = new Engine('t');
+    assert.equal(await e.search(board), null);
+    assert.equal(await e.search(board), null);
+    assert.deepEqual(reports, ['blocked by policy']);
+  } finally { globalThis.Worker = Real; }
 });

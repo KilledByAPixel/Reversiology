@@ -54,6 +54,7 @@ const DEFAULTS = {
   coachFor: 'auto',
   speak: false,
   sound: true,
+  shortcuts: true,            // single-letter keyboard shortcuts (H, U, M…); can be turned off (WCAG 2.1.4)
   show: { moves: true, preview: true, danger: true, stable: false, frontier: false, parity: false, book: false, feedback: true, hints: false, numbers: false },
 };
 
@@ -196,12 +197,14 @@ function playMove(move, { human = false, news = '' } = {}) {
 function onClick(p) {
   if (swallowClick) { swallowClick = false; return; }
   if (armed) { disarm(); return; } // (keyboard) the board only ends the preview
-  if (resigned) { flash('You resigned. Take back to keep playing, or start a new game.'); return; }
   if (aiNode) { flash('Hold on, the AI is thinking…'); return; }
   const node = game.current;
   if (game.isOver(node)) { flash('Neither player can move. The game is over.'); return; }
+  // After resigning the game is over: moves explore it, for either side, and the AI stays quiet.
+  // Earlier in the game, where the AI moved next, you can try a move for it too; only
+  // the end of the line waits for the AI.
   const ai = aiColor();
-  if (ai && node.board.toPlay === ai) {
+  if (ai && !resigned && node.board.toPlay === ai && !node.children.length) {
     flash('It\'s the AI\'s turn in this position. Press "AI move" to let it play, or step forward.');
     return;
   }
@@ -450,7 +453,7 @@ function gameOver() {
   announce(`Game over. ${resultPhrase(s)} ${ladderSentence()}`.trim());
   playSound(settings.human && s.winner !== settings.human ? 'lose' : 'win');
   render();
-  $('#scorePanel').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); // stacked below the board on phones
+  $('#scorePanel').scrollIntoView({ block: 'nearest', behavior: scrollMotion() }); // stacked below the board on phones
 }
 
 // ------------------------------------------------------------------ navigation
@@ -670,6 +673,7 @@ function renderBadge() {
   el.textContent = `${text} ↓`;
   el.classList.toggle('pending', !shown);
   el.style.setProperty('--pill', shown ? shown.color : '');
+  el.style.setProperty('--pill-ink', shown ? shown.ink : '');
   el.setAttribute('aria-label', shown ? `Coach: ${shown.label} on ${sq}. Show the coach's comments.` : 'Coach: still grading your move. Show the coach.');
 }
 
@@ -785,7 +789,7 @@ function renderReview() {
     const s = stats[c];
     if (!s.n) return '';
     const pills = ['blunder', 'mistake', 'inaccuracy'].filter(k => s.counts[k])
-      .map(k => `<span class="pill" style="--pill:${GRADES[k].color}">${plural(s.counts[k], gradeLabel(k, level).toLowerCase())}</span>`).join(' ');
+      .map(k => `<span class="pill" style="--pill:${GRADES[k].color};--pill-ink:${GRADES[k].ink}">${plural(s.counts[k], gradeLabel(k, level).toLowerCase())}</span>`).join(' ');
     const loss = s.loss / s.n;
     const avg = level === 'beginner' ? '' : `<span class="muted">${loss < 0.05 ? 'no discs lost' : `loses ${loss.toFixed(1)} discs/move`}</span>`;
     return `<div class="rv-row"><span class="disc-icon ${c === BLACK ? 'black' : 'white'}"></span><b>${who(c)}</b>` +
@@ -820,7 +824,7 @@ function moveEntry(node) {
   else {
     ctx.shown = levelGrade(g, level, facts);
     ctx.resultSaid = verdictSaysResult(g, level, ctx.shown);
-    const pill = `<span class="pill" style="--pill:${ctx.shown.color}">${ctx.shown.label}</span>`;
+    const pill = `<span class="pill" style="--pill:${ctx.shown.color};--pill-ink:${ctx.shown.ink}">${ctx.shown.label}</span>`;
     if (findIt(node, ctx.shown)) {
       html = head(pill) + '<p>There was something better here. Can you find it?</p>' +
         `<div class="fb-actions"><button data-act="retry" data-id="${node.id}">Try again</button><button data-act="reveal" data-id="${node.id}">Show answer</button></div>`;
@@ -962,7 +966,7 @@ function renderScorePanel() {
   el.hidden = false;
   if (resigned) {
     setHTML(el, `<h2>${colorName(resigned)} resigned</h2><p class="big">${resigned === settings.human ? 'The AI wins this one.' : 'You win!'}</p>${nextGameNote(resigned === BLACK ? -99 : 99)}${keyMomentsHtml()}
-      <div class="fb-actions"><button data-act="new" class="primary">New game</button></div>`);
+      <div class="fb-actions"><button data-act="review">Review the game</button><button data-act="save">Save game</button><button data-act="new" class="primary">New game</button></div>`);
   } else {
     const s = game.score(node);
     const winText = !s.winner ? 'A draw!' : !settings.human ? `${colorName(s.winner)} wins.` :
@@ -975,16 +979,28 @@ function renderScorePanel() {
         <tr><td>Empty squares (to the winner)</td><td>${s.winner === BLACK ? s.empty : s.winner ? '' : s.empty / 2}</td><td>${s.winner === WHITE ? s.empty : s.winner ? '' : s.empty / 2}</td></tr>` : ''}
         <tr class="total"><td>Total</td><td>${s.final[0]}</td><td>${s.final[1]}</td></tr>
       </table>
-      <div class="fb-actions"><button data-act="review">Review the game</button><button data-act="new" class="primary">New game</button></div>`);
+      <div class="fb-actions"><button data-act="review">Review the game</button><button data-act="save">Save game</button><button data-act="new" class="primary">New game</button></div>`);
   }
   el.onclick = e => {
     const act = e.target.dataset && e.target.dataset.act;
     const moment = !act && e.target.closest && e.target.closest('[data-id]');
     const node = moment && game.line().find(n => n.id === +moment.dataset.id);
     if (node) { goTo(node); return; }
-    if (act === 'review') { goTo(game.root); flash('Review: step through with ◀ ▶ or click the graph. Dots mark mistakes.'); }
+    if (act === 'review') {
+      goTo(game.root);
+      flash(`Review: step through with ◀ ▶ or click the graph. Dots mark mistakes. Click the board to try other moves${resigned ? ' for either side' : ''}.`);
+    }
+    if (act === 'save') exportGame();
     if (act === 'new') openNewGame();
   };
+}
+
+// For a node off the main line (each node's first child, from the start): the
+// main line's move where this line first left it. Null on the main line.
+function mainLineReturn(node) {
+  let fork = null;
+  for (let n = node; n.parent; n = n.parent) if (n.parent.children[0] !== n) fork = n.parent;
+  return fork && fork.children[0];
 }
 
 function renderNav() {
@@ -1011,11 +1027,15 @@ function renderNav() {
     html += `<span class="muted">Continue with:</span>` + node.children.map(s =>
       `<button class="chip" data-id="${s.id}">${sqName(s.move)}</button>`).join('');
   }
+  // Off the main line (the game as first played, ★): one click back to the
+  // main line's move where this line left it.
+  const back = mainLineReturn(node);
+  if (back) html += `<button class="chip" data-id="${back.id}">↩ Back to main line (move ${back.depth})</button>`;
   const v = $('#variations');
   setHTML(v, html);
   v.onclick = e => {
     const id = +(e.target.dataset && e.target.dataset.id);
-    const target = [...sibs, ...node.children].find(n => n.id === id);
+    const target = [...sibs, ...node.children, ...(back ? [back] : [])].find(n => n.id === id);
     if (target) goTo(target);
   };
 }
@@ -1225,10 +1245,10 @@ function load() {
     settings = { ...structuredClone(DEFAULTS), ...d.settings, show: { ...DEFAULTS.show, ...(d.settings && d.settings.show) } };
     settings.level = Math.min(LEVELS.length - 1, Math.max(0, settings.level | 0));
     if (!COACH_DEPTHS[settings.coachDepth]) settings.coachDepth = DEFAULTS.coachDepth;
-    settings.gradeAI = !!settings.gradeAI;
-    settings.findYourself = !!settings.findYourself;
-    settings.ladder = !!settings.ladder;
-    settings.speak = !!settings.speak;
+    // On/off settings (and the overlays) are true or false, else their default:
+    // stored junk mustn't, say, turn the coach off for good.
+    for (const k of Object.keys(DEFAULTS)) if (typeof DEFAULTS[k] === 'boolean' && typeof settings[k] !== 'boolean') settings[k] = DEFAULTS[k];
+    for (const k of Object.keys(DEFAULTS.show)) if (typeof settings.show[k] !== 'boolean') settings.show[k] = DEFAULTS.show[k];
     if (!COACH_FOR.some(o => o.key === settings.coachFor)) settings.coachFor = DEFAULTS.coachFor;
     if (![0, BLACK, WHITE].includes(settings.human)) settings.human = DEFAULTS.human;
     if (![0, 1, 2, 3, 4].includes(settings.handicap)) settings.handicap = DEFAULTS.handicap;
@@ -1312,6 +1332,7 @@ function syncOptions() {
   $('#optGradeAI').checked = settings.gradeAI;
   $('#optFindYourself').checked = settings.findYourself;
   $('#optLadder').checked = settings.ladder;
+  $('#optShortcuts').checked = settings.shortcuts;
   $('#optSpeak').checked = settings.speak;
   $('#optSound').checked = settings.sound;
   $('#toggles').querySelectorAll('input').forEach(i => { i.checked = !!settings.show[i.dataset.key]; });
@@ -1343,7 +1364,8 @@ function setupControls() {
     save(); render(); scheduleCoach();
   };
   $('#optFindYourself').onchange = e => { settings.findYourself = e.target.checked; save(); render(); };
-  $('#coachBadge').onclick = () => $('.coach').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('#coachBadge').onclick = () => $('.coach').scrollIntoView({ behavior: scrollMotion(), block: 'start' });
+  $('#optShortcuts').onchange = e => { settings.shortcuts = e.target.checked; save(); };
   $('#optLadder').onchange = e => { settings.ladder = e.target.checked; save(); render(); };
   $('#optSound').onchange = e => { settings.sound = e.target.checked; setSoundEnabled(settings.sound); save(); if (settings.sound) playSound('disc'); };
   $('#optSpeak').onchange = e => { settings.speak = e.target.checked; setSpeech(settings.speak); save(); announce(settings.speak ? 'Speech on.' : 'Speech off.'); };
@@ -1414,18 +1436,25 @@ function setupControls() {
       if (e.target.closest('select') && /^(Arrow|Home|End|Enter| )/.test(e.key)) return;
     }
     const k = e.key.toLowerCase();
+    // Home, End, Page Up and Down scroll the page (on phones the panels sit
+    // below the board): they step through the game only from the board's own
+    // controls. Left and right step from anywhere; they don't scroll.
+    const atGame = e.target instanceof Element && !!e.target.closest('#board, .nav, #graph, .variations');
+    // Single letters can be turned off (Settings), for speech input and switch users.
+    const letter = settings.shortcuts && k.length === 1;
     if (e.key === 'ArrowLeft') nav('prev');
     else if (e.key === 'ArrowRight') nav('next');
-    else if (e.key === 'Home') nav('first');
-    else if (e.key === 'End') nav('last');
-    else if (e.key === 'PageUp') nav('prev');
-    else if (e.key === 'PageDown') nav('next');
+    else if (e.key === 'Home' && atGame) nav('first');
+    else if (e.key === 'End' && atGame) nav('last');
+    else if (e.key === 'PageUp' && atGame) nav('prev');
+    else if (e.key === 'PageDown' && atGame) nav('next');
+    else if (e.key === 'Escape') { better = null; peek = null; armed = null; hintOn = false; threat = null; scout.cancel(); render(); }
+    else if (!letter) return;
     else if (k === 's') { if (!$('#optSpeak').disabled) $('#optSpeak').click(); }
     else if (k === 'r') repeatLast();
-    else if (k === 'u' || e.key === 'Backspace') takeBack();
+    else if (k === 'u') takeBack();
     else if (k === 'h') $('#btnHint').click();
     else if (k === 'o') toggleThreat();
-    else if (e.key === 'Escape') { better = null; peek = null; armed = null; hintOn = false; threat = null; scout.cancel(); render(); }
     else if (toggleKey[k]) {
       const key = toggleKey[k];
       settings.show[key] = !settings.show[key];
@@ -1434,6 +1463,9 @@ function setupControls() {
     e.preventDefault();
   });
 }
+
+// Scrolls glide unless the player asked their system for reduced motion.
+function scrollMotion() { return globalThis.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'; }
 
 // ------------------------------------------------------------------ boot
 

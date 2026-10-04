@@ -13,7 +13,11 @@
   --chance: #2f7fbf;
   --shadow: 0 1px 2px rgba(20, 40, 20, .08), 0 6px 20px rgba(20, 40, 20, .07);
   color-scheme: light;
+  /* The height always visible: on phones 100vh counts the address bar too.
+     svh rather than dvh, so the board doesn't resize as the bar slides away. */
+  --vh: 100vh;
 }
+@supports (height: 100svh) { :root { --vh: 100svh; } }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #161a17;
@@ -58,7 +62,7 @@ kbd {
 .side { grid-area: side; align-self: start; }
 .more {
   grid-area: more; align-self: start; justify-self: center;
-  width: 100%; max-width: max(min(100%, calc(100vh - 170px)), 720px);
+  width: 100%; max-width: max(min(100%, calc(var(--vh) - 170px)), 720px);
   display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; align-items: start;
 }
 .more .credits { grid-column: 1 / -1; }
@@ -72,17 +76,17 @@ kbd {
 /* ---------------------------------------------------------------- board column */
 .board-col { display: flex; flex-direction: column; align-items: center; min-width: 0; }
 .topbar {
-  width: 100%; max-width: min(100%, calc(100vh - 170px)); min-width: min(100%, 420px);
+  width: 100%; max-width: min(100%, calc(var(--vh) - 170px)); min-width: min(100%, 420px);
   display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; flex-wrap: wrap;
 }
-.brand { font-weight: 750; font-size: 20px; letter-spacing: .2px; white-space: nowrap; }
+.brand { font-weight: 750; font-size: 20px; letter-spacing: .2px; white-space: nowrap; margin: 0; }
 .brand .logo { width: 28px; height: 28px; border-radius: 6px; vertical-align: -7px; margin-right: 8px; }
 .brand span { color: var(--accent); font-weight: 600; }
 /* The coach badge: shown only by the single-column layout above, where the
    coach card is below the board (one rule, so the two can never disagree). */
 .coach-badge {
   display: none; margin-left: auto; padding: 4px 11px; border-radius: 999px; font-size: 13px; font-weight: 700; letter-spacing: .2px;
-  background: var(--pill, #888); border-color: transparent; color: #fff;
+  background: var(--pill, #888); border-color: transparent; color: var(--pill-ink, #1d1d1d);
 }
 .coach-badge.pending { background: var(--line); color: var(--muted); }
 .coach-badge:hover:not(:disabled) { background: var(--pill, #888); filter: brightness(1.08); }
@@ -104,7 +108,7 @@ kbd {
 
 .board-wrap {
   width: 100%;
-  max-width: min(100%, calc(100vh - 170px));
+  max-width: min(100%, calc(var(--vh) - 170px));
   min-width: min(100%, 420px);
   aspect-ratio: 1;
   touch-action: manipulation;
@@ -130,7 +134,7 @@ kbd {
 
 .message {
   /* Two full lines of text (1.45 line height) plus the padding, so a message of up to two lines never moves the controls below. */
-  min-height: calc(2.9em + 8px); width: 100%; max-width: min(100%, calc(100vh - 170px));
+  min-height: calc(2.9em + 8px); width: 100%; max-width: min(100%, calc(var(--vh) - 170px));
   padding: 8px 4px 0; text-align: center; color: var(--muted);
 }
 .message.bad { color: var(--warn); font-weight: 600; }
@@ -190,7 +194,7 @@ button.pass-btn { display: none; }
 .fb-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pill {
   display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700;
-  background: var(--pill, #888); color: #fff; letter-spacing: .2px;
+  background: var(--pill, #888); color: var(--pill-ink, #1d1d1d); letter-spacing: .2px;
 }
 .pill.pending { background: var(--line); color: var(--muted); }
 .fb-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -305,3 +309,8 @@ menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 1
 .lesson { background: color-mix(in srgb, #7b5ea7 12%, transparent); border-left: 3px solid #7b5ea7; padding: 6px 9px; border-radius: 6px; font-size: 14px; }
 .pz-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; flex-wrap: wrap; }
 .pz-foot select { padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--btn); }
+
+/* Reduced motion: no drops, flips, blinks or sliding. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

@@ -41,10 +41,18 @@ self.onmessage = async e => {
     if (job !== mine) return;
     if (loadError) { postMessage({ type: 'warning', message: loadError }); loadError = null; }
     const { color, toPlay, opts } = msg;
-    mine.gen = engine.analyze(positionFromColors(color, toPlay), opts);
+    try { mine.gen = engine.analyze(positionFromColors(color, toPlay), opts); } catch (err) { failJob(mine, err); return; }
     yieldThen();
   }
 };
+
+// A search that throws (an odd position, a bug) ends with no results instead
+// of taking the whole worker down; the next search runs as usual.
+function failJob(j, err) {
+  console.warn('Engine: a search failed', err && err.message);
+  if (job === j) job = null;
+  postMessage({ type: 'done', id: j.id, results: null });
+}
 
 function step() {
   stepQueued = false;
@@ -53,7 +61,9 @@ function step() {
   const t0 = performance.now();
   let x;
   // A few steps per slice when they're quick.
-  do x = j.gen.next(); while (!x.done && performance.now() - t0 < 15);
+  try {
+    do x = j.gen.next(); while (!x.done && performance.now() - t0 < 15);
+  } catch (err) { failJob(j, err); return; }
   if (job !== j) return;
   const now = performance.now();
   if (x.done) {

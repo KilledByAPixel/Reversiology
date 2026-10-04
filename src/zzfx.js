@@ -59,7 +59,9 @@ export const ZZFX =
     sampleRate: 44100,
     
     // create shared audio context
-    audioContext: new AudioContext,
+    // (null where audio isn't available, so a page importing this still loads;
+    // older Safari only has webkitAudioContext)
+    audioContext: (() => { try { return new (globalThis.AudioContext || globalThis.webkitAudioContext)(); } catch { return null; } })(),
 
     // play a sound from zzfx paramerters
     play: function(...parameters)

@@ -49,7 +49,17 @@ export class Engine {
   // is replaced this way by the next search; messages and errors from a
   // replaced worker are nobody's.
   start() {
-    const worker = this.worker = new Worker(new URL('./engine-worker.js', import.meta.url), { type: 'module' });
+    let worker;
+    try { worker = new Worker(new URL('./engine-worker.js', import.meta.url), { type: 'module' }); } catch (err) {
+      // No worker at all (a strict content policy, say): the page still works,
+      // and searches answer null as a broken worker's do.
+      this.worker = null;
+      this.failed = true;
+      if (!this.reported && Engine.onError) Engine.onError(this.name, String(err && err.message || err));
+      this.reported = true;
+      return;
+    }
+    this.worker = worker;
     this.failed = false;
     loadData().then(d => {
       if (this.worker !== worker) return;
@@ -77,6 +87,7 @@ export class Engine {
   search(board, { onProgress = null, reportMs = 250, ...opts } = {}) {
     this.cancel();
     if (this.failed) this.start(); // one new worker per search asked for, never a loop
+    if (!this.worker) return Promise.resolve(null);
     const id = this.nextId++;
     return new Promise(resolve => {
       this.pending = { id, resolve, onProgress };
@@ -100,8 +111,9 @@ export class Engine {
     if (msg.type === 'progress') { if (job.onProgress) job.onProgress(msg.results, false); return; }
     if (msg.type === 'done') {
       this.pending = null;
-      if (job.onProgress) job.onProgress(msg.results, true);
-      job.resolve(msg.results);
+      // A callback that throws mustn't leave the search waiting for ever; an
+      // empty result (a failed search) isn't a finished read to report.
+      try { if (job.onProgress && msg.results) job.onProgress(msg.results, true); } finally { job.resolve(msg.results); }
     }
   }
 }
